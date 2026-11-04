@@ -78,6 +78,13 @@
       "when": 1793805452488,
       "tag": "0010_wise_pixie",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793806115024,
+      "tag": "0011_famous_paper_doll",
+      "breakpoints": true
     }
   ]
 }

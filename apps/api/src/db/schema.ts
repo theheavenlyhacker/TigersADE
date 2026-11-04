@@ -1,4 +1,4 @@
-import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, date } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, uniqueIndex, date } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const branches = pgTable('branches', {
@@ -34,7 +34,7 @@ export const staffMembers = pgTable('staff_members', {
   id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
   name: text('name').notNull(), position: text('position').notNull(), shiftStart: time('shift_start').notNull(), shiftEnd: time('shift_end').notNull(),
   active: boolean('active').notNull().default(true), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => [unique('staff_members_branch_name_unique').on(t.branchId, t.name)]);
+}, t => [uniqueIndex('staff_members_branch_name_unique').on(t.branchId, t.name).where(sql`${t.active}`)]);
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull(), passwordHash: text('password_hash').notNull(), name: text('name').notNull(),
