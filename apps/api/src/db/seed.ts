@@ -28,6 +28,18 @@ async function main() {
       await pool.query('delete from user_branches where user_id = $1', [result.rows[0].id]);
       if (branch) await pool.query('insert into user_branches (user_id, branch_id) select $1, id from branches where code = $2', [result.rows[0].id, branch]);
     }
+    const roster = [
+      ['main', 'Mika Santos', 'Branch manager', '06:00', '14:00'], ['main', 'Jon Dela Cruz', 'Barista', '06:00', '14:00'],
+      ['annex', 'Paolo Reyes', 'Branch manager', '07:00', '15:00'], ['annex', 'Ana Lim', 'Cashier', '14:00', '22:00'],
+      ['pacol', 'Liza Cruz', 'Branch manager', '08:00', '16:00'], ['pacol', 'Ben Tan', 'Barista', '14:00', '22:00'],
+    ] as const;
+    for (const [code, staffName, position, start, end] of roster) {
+      const staff = await pool.query(`insert into staff_members(branch_id,name,position,shift_start,shift_end)
+        select id,$2,$3,$4,$5 from branches where code=$1
+        on conflict do nothing returning id`, [code, staffName, position, start, end]);
+      const row = staff.rows[0] ?? (await pool.query('select s.id from staff_members s join branches b on b.id=s.branch_id where b.code=$1 and s.name=$2 limit 1', [code, staffName])).rows[0];
+      if (position === 'Branch manager') await pool.query('update users set staff_member_id=$1 where email=$2', [row.id, `${code}@tigerscafe.ph`]);
+    }
     const cashier = await pool.query(`insert into users (email, password_hash, name, role) values ('cashier@tigerscafe.ph', $1, 'Ana Lim', 'cashier')
       on conflict (lower(email)) do update set password_hash=excluded.password_hash, name=excluded.name, role=excluded.role, active=true returning id`, [pass]);
     await pool.query('delete from user_branches where user_id = $1', [cashier.rows[0].id]);

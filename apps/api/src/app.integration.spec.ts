@@ -297,4 +297,48 @@ describe('API foundation (Postgres)', () => {
       await app.close();
     }
   });
+
+  it('records, edits and deletes branch expenses, reports their share of sales, and uses them in the summary', async () => {
+    const app = await createTestApp('test', new Date('2025-03-01T01:00:00+08:00'));
+    const db = app.get<Db>(DB);
+    try {
+      const branches = await db.execute(sql`select id, code from branches order by code`);
+      const main = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'main')!;
+      const annex = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'annex')!;
+      await db.execute(sql`update branches set day_cutoff = '04:00' where id = ${annex.id}`);
+      const category = await db.execute(sql`select id from expense_categories order by name limit 1`);
+      const login = async (email: string) => {
+        const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+        return result.headers['set-cookie'][0].split(';')[0];
+      };
+      const owner = await login('roy@tigerscafe.ph');
+      const manager = await login('main@tigerscafe.ph');
+      const cashier = await login('cashier@tigerscafe.ph');
+      const body = { categoryId: category.rows[0].id, businessDate: '2025-02-28', amount: '12345', note: 'Milk delivery' };
+      await request(app.getHttpServer()).post(`/branches/${main.id}/expenses`).set('Cookie', cashier).send(body).expect(403);
+      await request(app.getHttpServer()).post(`/branches/${main.id}/expenses`).set('Cookie', manager).send({ ...body, amount: '0' }).expect(422);
+      const created = await request(app.getHttpServer()).post(`/branches/${main.id}/expenses`).set('Cookie', manager).send(body).expect(201);
+      expect(created.body).toMatchObject({ branchId: main.id, categoryId: category.rows[0].id, businessDate: body.businessDate, amount: body.amount, note: body.note });
+      await request(app.getHttpServer()).get(`/branches/${annex.id}/expenses?from=2025-02-01&to=2025-02-28`).set('Cookie', manager).expect(403);
+      const updated = await request(app.getHttpServer()).patch(`/branches/${main.id}/expenses/${created.body.id}`).set('Cookie', manager).send({ amount: '23456', note: 'Updated invoice' }).expect(200);
+      expect(updated.body).toMatchObject({ amount: '23456', note: 'Updated invoice' });
+      await request(app.getHttpServer()).get(`/branches/${main.id}/expenses?from=2025-02-01&to=2025-02-28`).set('Cookie', manager).expect(200).expect(({ body: rows }) => expect(rows).toContainEqual(expect.objectContaining({ id: created.body.id, amount: '23456' })));
+      await request(app.getHttpServer()).delete(`/branches/${main.id}/expenses/${created.body.id}`).set('Cookie', owner).expect(200);
+      const audit = await db.execute(sql`select action, payload from activity_log where payload->>'expenseId' = ${created.body.id} order by id`);
+      expect(audit.rows.map(r => r.action)).toEqual(['expense.created', 'expense.updated', 'expense.deleted']);
+      expect(audit.rows[1].payload).toMatchObject({ before: { amount: '12345' }, after: { amount: '23456' } });
+      expect((audit.rows[2].payload as any).before).toMatchObject({ amount: '23456', note: 'Updated invoice' });
+      const beforeReport = await request(app.getHttpServer()).get('/reports/expenses?branch=all&month=2025-02').set('Cookie', owner).expect(200);
+      const beforeCategoryTotal = BigInt(beforeReport.body.categories.find((c: { categoryId: string }) => c.categoryId === category.rows[0].id).total);
+      const beforeSummary = await request(app.getHttpServer()).get(`/reports/summary?branch=${annex.id}`).set('Cookie', owner).expect(200);
+      const anyBranchExpense = await request(app.getHttpServer()).post(`/branches/${annex.id}/expenses`).set('Cookie', owner).send(body).expect(201);
+      const report = await request(app.getHttpServer()).get('/reports/expenses?branch=all&month=2025-02').set('Cookie', owner).expect(200);
+      expect(BigInt(report.body.categories.find((c: { categoryId: string }) => c.categoryId === category.rows[0].id).total)).toBe(beforeCategoryTotal + 12345n);
+      expect(report.body.shareOfSales === null || typeof report.body.shareOfSales === 'number').toBe(true);
+      const summary = await request(app.getHttpServer()).get(`/reports/summary?branch=${annex.id}`).set('Cookie', owner).expect(200);
+      expect(BigInt(summary.body.expenses)).toBe(BigInt(beforeSummary.body.expenses) + 12345n);
+      expect(summary.body).toMatchObject({ operatingContribution: (BigInt(summary.body.sales) - BigInt(summary.body.expenses)).toString() });
+      await request(app.getHttpServer()).delete(`/branches/${annex.id}/expenses/${anyBranchExpense.body.id}`).set('Cookie', owner).expect(200);
+    } finally { await app.close(); }
+  });
 });
