@@ -15,6 +15,7 @@ async function todayFigure(page: import('@playwright/test').Page) {
 
 test("recording a sale raises today's dashboard figure and voiding it lowers the figure", async ({ page }) => {
   await login(page, 'main@tigerscafe.ph');
+  await expect(page.getByText('Plan for the lunch rush').locator('..').locator('p')).toContainText(/Busiest hour is \d{2}:00|No sales today yet/);
   const before = await todayFigure(page);
   await page.getByRole('button', { name: 'Log out' }).click({ force: true });
 

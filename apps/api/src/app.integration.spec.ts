@@ -177,6 +177,7 @@ describe('API foundation (Postgres)', () => {
 
   it('reports exact fixed-date figures and excludes voided sales', async () => {
     const app = await createTestApp('test', new Date('2026-04-01T12:00:00Z'));
+    const fixtureSaleIds: string[] = [];
     try {
       const db = app.get<Db>(DB);
       const branch = await db.execute(sql`select id from branches where code = 'main'`);
@@ -195,6 +196,7 @@ describe('API foundation (Postgres)', () => {
       const nextNo = await db.execute(sql`select coalesce(max(sale_no), 0)::int + 1 n from sales where branch_id = ${branchId}`);
       for (const [index, [date, amount, qty, createdAt]] of saleRows.entries()) {
         const id = randomUUID();
+        fixtureSaleIds.push(id);
         await db.execute(sql`insert into sales (id, branch_id, sale_no, business_date, payment_method, total, cashier_id, created_at, voided_at, voided_by, void_reason)
           values (${id}, ${branchId}, ${Number(nextNo.rows[0].n) + index}, ${date}, 'cash', ${amount}, ${cashierId.rows[0].id}, ${createdAt}::timestamptz,
             ${index === 4 ? createdAt : null}::timestamptz, ${index === 4 ? cashierId.rows[0].id : null}::uuid, ${index === 4 ? 'fixture void' : null})`);
@@ -240,7 +242,13 @@ describe('API foundation (Postgres)', () => {
       expect(monthly.body.forecast.dailyAverage).toBe('2527');
       const peak = await request(app.getHttpServer()).get(`/reports/peak-hours?branch=${branchId}&from=2026-03-30&to=2026-04-01`).set('Cookie', manager).expect(200);
       expect(peak.body).toEqual([{ local_hour: 9, customers: 2, sales: '130000' }, { local_hour: 14, customers: 1, sales: '70000' }]);
-    } finally { await app.close(); }
+    } finally {
+      const db = app.get<Db>(DB);
+      try {
+        await db.execute(sql`delete from sale_lines where sale_id = any(${sql.param(fixtureSaleIds)}::uuid[])`);
+        await db.execute(sql`delete from sales where id = any(${sql.param(fixtureSaleIds)}::uuid[])`);
+      } finally { await app.close(); }
+    }
   });
 
   it('records idempotent sales with catalog snapshots, cutoff business days, and gapless concurrent numbers', async () => {
