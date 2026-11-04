@@ -7,7 +7,7 @@ import { Catalog, apiUrl, loadCatalog } from "@/lib/catalog";
 const displayMoney = (centavos: string) => peso(Number(centavos) / 100);
 
 export default function P() {
-  const { user } = useAuth();
+  const { user, branches } = useAuth();
   const owner = user?.role === "owner";
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [q, setQ] = useState("");
@@ -19,12 +19,14 @@ export default function P() {
   const [newCost, setNewCost] = useState("");
   const [newCategoryId, setNewCategoryId] = useState("");
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [sales, setSales] = useState<Record<string, { units: number; revenue: string }>>({});
 
   const refresh = async () => {
     setCatalog(await loadCatalog());
   };
 
   useEffect(() => { refresh().catch(() => setError("Could not load the catalog.")); }, []);
+  useEffect(() => { const branch = user?.role === "owner" ? "all" : branches[0]?.id; if (!branch) return; fetch(`${apiUrl()}/reports/product-sales?branch=${branch}`, { credentials: "include" }).then(r => r.ok ? r.json() : []).then((rows: any[]) => setSales(Object.fromEntries(rows.map(row => [row.productId, row])))); }, [user, branches]);
   const rows = useMemo(() => catalog?.products.filter(p => (category === "All" || p.categoryId === category) && p.name.toLowerCase().includes(q.toLowerCase())) ?? [], [catalog, category, q]);
 
   const mutate = async (path: string, method: string, data: object) => {
@@ -61,9 +63,9 @@ export default function P() {
       </form>
     </div>}
     {error && <p role="alert" className="text-red-700">{error}</p>}
-    <div className="card"><table className="w-full"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Unit cost</th><th>Margin</th>{owner && <th>Manage</th>}</tr></thead><tbody>{rows.map(p => {
+    <div className="card"><table className="w-full"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Unit cost</th><th>Units sold</th><th>Revenue</th><th>Margin</th>{owner && <th>Manage</th>}</tr></thead><tbody>{rows.map(p => {
       const margin = Number(p.price) ? Math.round((Number(p.price) - Number(p.unitCost)) / Number(p.price) * 100) : 0;
-      return <tr key={p.id}><td>{p.name}</td><td>{p.categoryName}</td><td>{displayMoney(p.price)}</td><td>{displayMoney(p.unitCost)}</td><td>{margin}%</td>{owner && <td className="flex gap-2"><input className="btn w-28" aria-label={`Price for ${p.name}`} value={prices[p.id] ?? (Number(p.price) / 100).toFixed(2)} onChange={e => setPrices({ ...prices, [p.id]: e.target.value })} /><button className="btn" onClick={() => mutate(`/products/${p.id}`, "PATCH", { price: String(Math.round(Number(prices[p.id] ?? Number(p.price) / 100) * 100)) }).catch(() => setError("Could not update price."))}>Save price</button><button className="btn" onClick={() => mutate(`/products/${p.id}`, "PATCH", { active: false }).catch(() => setError("Could not archive product."))}>Archive</button></td>}</tr>;
+      return <tr key={p.id}><td>{p.name}</td><td>{p.categoryName}</td><td>{displayMoney(p.price)}</td><td>{displayMoney(p.unitCost)}</td><td>{sales[p.id]?.units ?? 0}</td><td>{displayMoney(sales[p.id]?.revenue ?? "0")}</td><td>{margin}%</td>{owner && <td className="flex gap-2"><input className="btn w-28" aria-label={`Price for ${p.name}`} value={prices[p.id] ?? (Number(p.price) / 100).toFixed(2)} onChange={e => setPrices({ ...prices, [p.id]: e.target.value })} /><button className="btn" onClick={() => mutate(`/products/${p.id}`, "PATCH", { price: String(Math.round(Number(prices[p.id] ?? Number(p.price) / 100) * 100)) }).catch(() => setError("Could not update price."))}>Save price</button><button className="btn" onClick={() => mutate(`/products/${p.id}`, "PATCH", { active: false }).catch(() => setError("Could not archive product."))}>Archive</button></td>}</tr>;
     })}</tbody></table>{!rows.length && <p className="text-black/50 pt-3">No products match. Try a different search.</p>}</div>
   </Page>;
 }

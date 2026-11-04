@@ -117,15 +117,6 @@ export class ExpenseReportsController {
     throw new UnprocessableEntityException('branch must be an accessible branch id or all for the owner');
   }
 
-  @Get('summary')
-  async summary(@Query('branch') branch: string, @Req() req: Request) {
-    const ids = await this.branches(branch, req);
-    const dates = await this.branchDates(ids);
-    const rows = await Promise.all(dates.map(({ id, today }) => this.pool.query(`select $1::uuid as "branchId", coalesce((select sum(total) from sales where branch_id=$1 and voided_at is null and business_date between $2 and $3),0)::text as sales, coalesce((select sum(amount) from expenses where branch_id=$1 and business_date between $2 and $3),0)::text as expenses`, [id, `${today.slice(0, 7)}-01`, today])));
-    const branches = rows.map(result => result.rows[0]).map(r => ({ ...r, operatingContribution: (BigInt(r.sales) - BigInt(r.expenses)).toString() }));
-    return { branches, sales: branches.reduce((n, b) => n + BigInt(b.sales), 0n).toString(), expenses: branches.reduce((n, b) => n + BigInt(b.expenses), 0n).toString(), operatingContribution: branches.reduce((n, b) => n + BigInt(b.operatingContribution), 0n).toString() };
-  }
-
   @Get('expenses')
   async report(@Query('branch') branch: string, @Query('month') month: string, @Req() req: Request) {
     if (!/^\d{4}-\d{2}$/.test(month ?? '') || Number(month.slice(5)) < 1 || Number(month.slice(5)) > 12) throw new UnprocessableEntityException('month must be YYYY-MM');
