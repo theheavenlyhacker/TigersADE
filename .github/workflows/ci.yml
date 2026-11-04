@@ -8,6 +8,19 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: tigers
+          POSTGRES_PASSWORD: tigers
+          POSTGRES_DB: tigers_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tigers -d tigers_test"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,7 +29,14 @@ jobs:
       - run: pnpm install
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          DATABASE_URL: postgres://tigers:tigers@localhost:5432/tigers_test
       - run: pnpm build
+      - run: pnpm --filter @tigers/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @tigers/web test:e2e
+        env:
+          CI: 'true'
+          DATABASE_URL: postgres://tigers:tigers@localhost:5432/tigers_test
   docker:
     needs: verify
     runs-on: ubuntu-latest
