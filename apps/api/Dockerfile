@@ -15,4 +15,4 @@ COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /repo/apps/api/dist ./dist
 COPY --from=build /repo/apps/api/drizzle ./drizzle
 EXPOSE 4000
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && node dist/main.js"]
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/main.js"]

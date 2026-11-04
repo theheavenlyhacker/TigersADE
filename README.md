@@ -8,8 +8,6 @@
     docker compose up   # same, containerised
 
 CI: `.github/workflows/ci.yml` (typecheck, test, build, docker build).
-# Tigers ADE
-
 ## Local API and browser tests
 
 Start an isolated test database on port 5434, then run the API integration tests and browser smoke test:
