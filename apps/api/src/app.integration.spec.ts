@@ -56,6 +56,49 @@ describe('API foundation (Postgres)', () => {
     }
   });
 
+  it('lets only the owner manage users, resets passwords, and ends every session on deactivation', async () => {
+    const app = await createTestApp('test', new Date());
+    const db = app.get<Db>(DB);
+    const email = `issue14-${randomUUID()}@tigerscafe.ph`;
+    try {
+      const login = async (address: string, password = process.env.DEV_PASSWORD ?? 'tigers123') => {
+        const r = await request(app.getHttpServer()).post('/auth/login').send({ email: address, password });
+        return r;
+      };
+      const owner = await login('roy@tigerscafe.ph');
+      const ownerCookie = owner.headers['set-cookie'][0].split(';')[0];
+      const branch = await db.execute(sql`select id from branches where code='main'`);
+      const mainId = branch.rows[0].id as string;
+      const created = await request(app.getHttpServer()).post('/users').set('Cookie', ownerCookie).send({ email, name: 'Issue 14 User', password: 'initial-pass-14', role: 'cashier', branchIds: [mainId] }).expect(201);
+      const manager = await login('main@tigerscafe.ph');
+      const managerCookie = manager.headers['set-cookie'][0].split(';')[0];
+      await request(app.getHttpServer()).get('/users').set('Cookie', managerCookie).expect(403);
+      const staff = await request(app.getHttpServer()).post(`/branches/${mainId}/staff-members`).set('Cookie', managerCookie).send({ name: 'Issue 14 Roster', position: 'Barista', shiftStart: '06:00', shiftEnd: '14:00' }).expect(201);
+      const otherBranch = await db.execute(sql`select id from branches where code='annex'`);
+      await request(app.getHttpServer()).patch(`/branches/${otherBranch.rows[0].id}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ active: false }).expect(403);
+      await request(app.getHttpServer()).patch(`/branches/${mainId}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ name: 'Updated Roster', position: 'Cashier', shiftStart: '07:00', shiftEnd: '15:00' }).expect(200);
+      await request(app.getHttpServer()).patch(`/branches/${mainId}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ active: false }).expect(200);
+      const oldLogin = await login(email, 'initial-pass-14');
+      expect(oldLogin.status).toBe(201);
+      await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', managerCookie).send({ password: 'reset-pass-14' }).expect(403);
+      await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', ownerCookie).send({ password: 'reset-pass-14' }).expect(201);
+      expect((await login(email, 'initial-pass-14')).status).toBe(401);
+      const loggedIn = await login(email, 'reset-pass-14');
+      expect(loggedIn.status).toBe(201);
+      const userCookie = loggedIn.headers['set-cookie'][0].split(';')[0];
+      await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(200);
+      await request(app.getHttpServer()).post(`/users/${created.body.id}/deactivate`).set('Cookie', ownerCookie).send({}).expect(201);
+      await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(401);
+      const sessions = await db.execute(sql`select count(*)::int as count from sessions where user_id=${created.body.id}`);
+      expect(sessions.rows[0].count).toBe(0);
+      const activity = await db.execute(sql`select action from activity_log where payload->>'userId'=${created.body.id}`);
+      expect(activity.rows.map(r => r.action)).toEqual(expect.arrayContaining(['user.created','user.deactivated']));
+    } finally {
+      await db.execute(sql`delete from users where email=${email}`);
+      await app.close();
+    }
+  });
+
   it('limits a branch manager to their assigned branch on the API', async () => {
     const app = await createTestApp('test', new Date());
     try {

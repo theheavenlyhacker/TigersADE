@@ -64,6 +64,20 @@
       "when": 1793803770692,
       "tag": "0008_robust_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793805091455,
+      "tag": "0009_watery_payback",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793805452488,
+      "tag": "0010_wise_pixie",
+      "breakpoints": true
     }
   ]
 }

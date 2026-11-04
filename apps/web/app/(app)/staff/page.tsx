@@ -2,42 +2,34 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/Auth";
 import { Page } from "@/components/ui";
-import { staff, bname } from "@/lib/data";
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? (typeof window === "undefined" ? "http://localhost:4000" : `http://${window.location.hostname}:4000`);
-type Entry = { id: string; branchId: string; branchName: string; actorName: string; action: string; payload: Record<string, unknown>; createdAt: string };
-
+type Staff = {id:string;branchId:string;name:string;position:string;shiftStart:string;shiftEnd:string};
+type User = {id:string;email:string;name:string;role:string;active:boolean;branchIds:string[]};
+type Entry = {id:string;branchId:string|null;branchName:string|null;actorName:string;action:string;payload:Record<string,unknown>;createdAt:string};
 export default function S() {
-  const { user, list, branches } = useAuth();
-  const ids = list?.map((b: { id: string }) => b.id) ?? [];
-  const [branch, setBranch] = useState("");
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  async function load(before?: string) {
-    setLoading(true); setError("");
-    const params = new URLSearchParams({ limit: "20" });
-    if (branch) params.set("branch", branch);
-    if (before) params.set("before", before);
-    try {
-      const response = await fetch(`${api}/activity?${params}`, { credentials: "include" });
-      if (!response.ok) throw new Error();
-      const page = await response.json();
-      setEntries(old => before ? [...old, ...page.items] : page.items);
-      setCursor(page.nextBefore);
-    } catch { setError("Could not load activity."); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { if (user) void load(); }, [user, branch]);
-  if (!list || !user) return null;
-  return <Page title="Staff & activity" sub="Who is working, and what changed.">
-    <div className="card"><h3 className="font-semibold mb-2">Staff on roster</h3><table className="w-full"><thead><tr><th>Name</th><th>Role</th><th>Branch</th><th>Shift</th></tr></thead><tbody>{staff.filter(s => ids.includes(s.branch)).map(s => <tr key={s.name}><td>{s.name}</td><td>{s.role}</td><td>{bname(s.branch)}</td><td>{s.shift}</td></tr>)}</tbody></table></div>
-    <section className="card" aria-labelledby="activity-title"><div className="flex justify-between items-center gap-4 mb-2"><h3 id="activity-title" className="font-semibold">Activity log</h3><label className="text-sm">Branch <select className="btn ml-2" value={branch} onChange={e => setBranch(e.target.value)}><option value="">All branches</option>{branches.map((b: { id: string; name: string }) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-      {entries.map(entry => <div key={entry.id} className="flex flex-wrap gap-x-4 py-2 border-t border-black/5 text-sm"><time className="text-black/40">{new Date(entry.createdAt).toLocaleString()}</time><span className="flex-1">{entry.action.replaceAll(".", " ")} {JSON.stringify(entry.payload)}</span><span className="text-black/50">{entry.actorName} · {entry.branchName}</span></div>)}
-      {!entries.length && !loading && <p className="text-sm text-black/50 py-3">No activity yet.</p>}
-      {cursor && <button className="btn mt-3" disabled={loading} onClick={() => void load(cursor)}>{loading ? "Loading…" : "Load older activity"}</button>}
+  const {user,branches}=useAuth(); const owner=user?.role==="owner";
+  const [branch,setBranch]=useState("");const [activityBranch,setActivityBranch]=useState(""); const [staff,setStaff]=useState<Staff[]>([]); const [users,setUsers]=useState<User[]>([]); const [error,setError]=useState("");
+  const [entries,setEntries]=useState<Entry[]>([]);const [cursor,setCursor]=useState<string|null>(null);
+  const [name,setName]=useState("");const [position,setPosition]=useState("");const [start,setStart]=useState("06:00");const [end,setEnd]=useState("14:00");const [editing,setEditing]=useState("");
+  const [email,setEmail]=useState("");const [password,setPassword]=useState("");const [role,setRole]=useState("cashier");const [userBranch,setUserBranch]=useState("");const [userStaff,setUserStaff]=useState("");
+  async function request(path:string,method="GET",body?:unknown){const r=await fetch(`${api}${path}`,{method,credentials:"include",headers:{"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});if(!r.ok)throw new Error((await r.json()).message||"Request failed");return r.status===204?null:r.json()}
+  async function load(){try{setError("");const chosen=branch||branches[0]?.id||"";if(chosen){const rows=owner?(await Promise.all(branches.map((b:any)=>request(`/branches/${b.id}/staff-members`)))).flat():await request(`/branches/${chosen}/staff-members`);setStaff(rows)}else setStaff([]);if(owner)setUsers(await request("/users"));await loadActivity();}catch(e){setError(e instanceof Error?e.message:"Could not load staff");}}
+  async function loadActivity(before?:string){const q=new URLSearchParams({limit:"20"});if(activityBranch)q.set("branch",activityBranch);if(before)q.set("before",before);const page=await request(`/activity?${q}`);setEntries(old=>before?[...old,...page.items]:page.items);setCursor(page.nextBefore)}
+  useEffect(()=>{if(user&&branches.length){if(!branch)setBranch(user.role==="owner"?branches[0].id:branches[0].id);void load();}},[user,branches,branch]);
+  async function addStaff(e:React.FormEvent){e.preventDefault();try{await request(`/branches/${branch}/staff-members${editing?`/${editing}`:""}`,editing?"PATCH":"POST",{name,position,shiftStart:start,shiftEnd:end});setName("");setPosition("");setEditing("");await load()}catch(e){setError(e instanceof Error?e.message:"Could not save staff")}}
+  async function archive(id:string){try{await request(`/branches/${branch}/staff-members/${id}`,"PATCH",{active:false});await load()}catch(e){setError(e instanceof Error?e.message:"Could not archive staff")}}
+  async function addUser(e:React.FormEvent){e.preventDefault();try{await request("/users","POST",{email,name,password,role,branchIds:role==="owner"?[]:[userBranch],staffMemberId:userStaff||null});setEmail("");setName("");setPassword("");setUserStaff("");await load()}catch(e){setError(e instanceof Error?e.message:"Could not create user")}}
+  if(!user)return null;
+  return <Page title="Staff & activity" sub="Manage the branch roster and user access.">
+    {error&&<p role="alert" className="text-red-700">{error}</p>}
+    <section className="card"><div className="flex justify-between items-center mb-3"><h2 className="font-semibold">Staff roster</h2><label>Branch <select className="btn ml-2" value={branch} onChange={e=>setBranch(e.target.value)}>{branches.map((b:any)=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+      <table className="w-full"><thead><tr><th className="text-left">Name</th><th className="text-left">Position</th><th className="text-left">Default shift</th><th/></tr></thead><tbody>{staff.filter(s=>s.branchId===branch).map(s=><tr key={s.id}><td>{s.name}</td><td>{s.position}</td><td>{s.shiftStart}–{s.shiftEnd}</td><td><button className="underline mr-3" onClick={()=>{setEditing(s.id);setName(s.name);setPosition(s.position);setStart(s.shiftStart);setEnd(s.shiftEnd)}}>Edit</button><button className="underline" onClick={()=>void archive(s.id)}>Archive</button></td></tr>)}</tbody></table>
+      <form onSubmit={addStaff} className="flex flex-wrap gap-2 mt-4"><input className="btn" required placeholder="Name" value={name} onChange={e=>setName(e.target.value)}/><input className="btn" required placeholder="Position" value={position} onChange={e=>setPosition(e.target.value)}/><input className="btn" aria-label="Shift start" type="time" value={start} onChange={e=>setStart(e.target.value)}/><input className="btn" aria-label="Shift end" type="time" value={end} onChange={e=>setEnd(e.target.value)}/><button className="btn bg-mint">{editing?"Save staff member":"Add staff member"}</button>{editing&&<button type="button" className="btn" onClick={()=>{setEditing("");setName("");setPosition("")}}>Cancel</button>}</form>
     </section>
+    {owner&&<section className="card"><h2 className="font-semibold mb-3">User management</h2><div className="space-y-2 mb-4">{users.map(u=><div key={u.id} className="flex flex-wrap items-center gap-3 border-t border-black/5 py-2"><span className="flex-1">{u.name} · {u.email} · {u.role} {!u.active&&"· deactivated"}</span><select className="btn" value={u.role} onChange={async e=>{const next=e.target.value;try{await request(`/users/${u.id}`,"PATCH",{role:next,branchIds:next==="owner"?[]:u.branchIds.length?u.branchIds:[branches[0]?.id]});await load()}catch(err){setError(err instanceof Error?err.message:"Could not update user")}}}><option value="owner">Owner</option><option value="manager">Branch manager</option><option value="cashier">Cashier</option></select>{u.role!=="owner"&&<select multiple aria-label={`Branches for ${u.name}`} className="btn" value={u.branchIds} onChange={async e=>{const ids=Array.from(e.target.selectedOptions,o=>o.value);if(!ids.length)return;try{await request(`/users/${u.id}`,"PATCH",{role:u.role,branchIds:ids});await load()}catch(err){setError(err instanceof Error?err.message:"Could not update branches")}}}>{branches.map((b:any)=><option key={b.id} value={b.id}>{b.name}</option>)}</select>}{u.active&&<button className="underline" onClick={async()=>{try{await request(`/users/${u.id}/deactivate`,"POST",{});await load()}catch(e){setError(e instanceof Error?e.message:"Could not deactivate user")}}}>Deactivate</button>}<button className="underline" onClick={async()=>{const next=window.prompt("New password (at least 8 characters)");if(next)try{await request(`/users/${u.id}/password`,"POST",{password:next});}catch(e){setError(e instanceof Error?e.message:"Could not reset password")}}}>Reset password</button></div>)}</div>
+      <form onSubmit={addUser} className="flex flex-wrap gap-2"><input className="btn" type="email" required placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}/><input className="btn" required placeholder="Name" value={name} onChange={e=>setName(e.target.value)}/><input className="btn" type="password" minLength={8} required placeholder="Temporary password" value={password} onChange={e=>setPassword(e.target.value)}/><select className="btn" value={role} onChange={e=>setRole(e.target.value)}><option value="cashier">Cashier</option><option value="manager">Branch manager</option><option value="owner">Owner</option></select>{role!=="owner"&&<select className="btn" value={userBranch} onChange={e=>setUserBranch(e.target.value)} required><option value="">Choose branch</option>{branches.map((b:any)=><option key={b.id} value={b.id}>{b.name}</option>)}</select>}<select className="btn" value={userStaff} onChange={e=>setUserStaff(e.target.value)}><option value="">No linked staff member</option>{staff.map(s=><option key={s.id} value={s.id}>{s.name} · {branches.find((b:any)=>b.id===s.branchId)?.name}</option>)}</select><button className="btn bg-mint">Create user</button></form>
+    </section>}
+    <section className="card"><div className="flex justify-between items-center mb-2"><h2 className="font-semibold">Activity log</h2><label>Branch <select className="btn ml-2" value={activityBranch} onChange={e=>{setActivityBranch(e.target.value);setEntries([]);setCursor(null);void loadActivity()}}><option value="">All branches</option>{branches.map((b:any)=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>{entries.map(x=><div key={x.id} className="flex flex-wrap gap-x-4 py-2 border-t border-black/5 text-sm"><time className="text-black/40">{new Date(x.createdAt).toLocaleString()}</time><span className="flex-1">{x.action.replaceAll("."," ")} {JSON.stringify(x.payload)}</span><span className="text-black/50">{x.actorName} · {x.branchName||"All branches"}</span></div>)}{!entries.length&&<p className="text-sm text-black/50 py-3">No activity yet.</p>}{cursor&&<button className="btn mt-3" onClick={()=>void loadActivity(cursor)}>Load older activity</button>}</section>
   </Page>;
 }
