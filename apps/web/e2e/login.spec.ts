@@ -14,6 +14,7 @@ test('login page renders while the API is running', async ({ page, request }) =>
   await page.getByPlaceholder('Password').fill('tigers123');
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page).toHaveURL(/dashboard/);
+  await expect(page.locator('body')).not.toContainText('NaN');
   await expect(page.getByText('Mika Santos', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tigers cafe Main' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tigers cafe Annex' })).toHaveCount(0);

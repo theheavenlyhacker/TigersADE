@@ -1,4 +1,4 @@
-import { bigint, boolean, integer, pgTable, primaryKey, text, time, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, pgTable, primaryKey, text, time, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const branches = pgTable('branches', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -23,4 +23,4 @@ export const userBranches = pgTable('user_branches', {
 export const sessions = pgTable('sessions', {
   tokenHash: text('token_hash').primaryKey(), userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-});
+}, t => [index('sessions_user_id_idx').on(t.userId)]);

@@ -28,6 +28,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install
       - run: pnpm typecheck
+      - run: pnpm --filter @tigers/api db:migrate && pnpm --filter @tigers/api db:seed
+        env:
+          DATABASE_URL: postgres://tigers:tigers@localhost:5432/tigers_test
       - run: pnpm test
         env:
           DATABASE_URL: postgres://tigers:tigers@localhost:5432/tigers_test

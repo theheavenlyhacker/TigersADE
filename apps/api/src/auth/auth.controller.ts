@@ -15,7 +15,7 @@ export class AuthController {
 
   @Post('auth/login')
   @ApiOperation({ summary: 'Log in with an email and password' })
-  @ApiBody({ schema: { example: { email: 'owner@tigerscafe.ph', password: 'tigers123' } } })
+  @ApiBody({ schema: { type: 'object', required: ['email', 'password'], properties: { email: { type: 'string', format: 'email' }, password: { type: 'string', format: 'password' } } } })
   async login(@Body() body: { email?: string; password?: string }, @Res({ passthrough: true }) res: Response) {
     if (typeof body?.email !== 'string' || typeof body?.password !== 'string') throw new UnauthorizedException('Invalid email or password');
     const result = await this.auth.login(body.email.trim(), body.password);

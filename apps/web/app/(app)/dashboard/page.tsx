@@ -1,18 +1,18 @@
 "use client";
 import Link from "next/link";import {useState} from "react";import {useAuth} from "@/components/Auth";
-import {Page,Stat,Bar,Line} from "@/components/ui";import {peso,series,branches,inventory,products,bname,expenseCats} from "@/lib/data";
+import {Page,Stat,Bar,Line} from "@/components/ui";import {peso,series,branches as sampleBranches,inventory,products,bname,expenseCats} from "@/lib/data";
 export default function D(){
-const {user,list,scope,setScope,setAiOpen}=useAuth();const [msg,setMsg]=useState("");
+const {user,list,branches:apiBranches,scope,setScope,setAiOpen}=useAuth();const [msg,setMsg]=useState("");
 if(!user)return null;const owner=user.role==="owner";
 const sum=(k:"today"|"week"|"mtd"|"customers"|"expenses"|"stock")=>list.reduce((a:number,b:any)=>a+b[k],0);
 const mtd=sum("mtd");const g=list.reduce((a:number,b:any)=>a+b.growth*b.mtd,0)/mtd;
 const low=inventory.filter(i=>i.qty<i.par&&(scope==="all"||i.branch===scope));
-const ranked=[...branches].sort((a,b)=>b.mtd-a.mtd);const tot=branches.reduce((a,b)=>a+b.mtd,0);
+const ranked=[...sampleBranches].sort((a,b)=>b.mtd-a.mtd);const tot=sampleBranches.reduce((a,b)=>a+b.mtd,0);
 const b0=list[0];
-return <Page title={owner?"Executive dashboard":bname(user.branch)} sub={owner?"A clear view of your café business. Three branches, one connected picture.":"Your branch today: sales, targets and what needs doing."}
+return <Page title={owner?"Executive dashboard":list[0]?.name??"Branch dashboard"} sub={owner?"A clear view of your café business. Three branches, one connected picture.":"Your branch today: sales, targets and what needs doing."}
 action={owner&&<div className="flex gap-2"><button className="btn-p" onClick={()=>setAiOpen(true)}>Ask AI about your data</button><button className="btn" onClick={()=>setMsg("Report export is a placeholder.")}>Export report</button></div>}>
 {msg&&<div className="card text-sm bg-mint">{msg}</div>}
-{owner&&<select className="btn" value={scope} onChange={e=>setScope(e.target.value)}><option value="all">All branches</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>}
+{owner&&<select className="btn" value={scope} onChange={e=>setScope(e.target.value)}><option value="all">All branches</option>{apiBranches.map((b:any)=><option key={b.code} value={b.code}>{b.name}</option>)}</select>}
 <div className="bg-mint rounded-xl px-5 py-3 flex justify-between"><span>{owner?`Your business is growing. Revenue is up ${g.toFixed(1)}% vs the prior month's same period.`:`Your branch is up ${g.toFixed(1)}% vs the prior month's same period.`}</span>{owner&&<span>3 of 3 branches growing</span>}</div>
 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 <Stat dark l="Total sales today" v={peso(sum("today"))} s="Oct 18, 2026"/><Stat l="Sales this week" v={peso(sum("week"))} s="Oct 12–18"/><Stat l="Sales this month" v={peso(mtd)} s="Oct 1–18 · MTD"/><Stat l="Revenue growth · MTD" v={"+"+g.toFixed(1)+"%"} s="vs prior period"/>
