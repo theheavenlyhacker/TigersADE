@@ -1,0 +1,2 @@
+ALTER TABLE "branch_inventory" ADD CONSTRAINT "branch_inventory_par_nonnegative" CHECK ("branch_inventory"."par" >= 0);--> statement-breakpoint
+ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_type_valid" CHECK ("stock_movements"."type" in ('received','wastage','adjustment','count'));

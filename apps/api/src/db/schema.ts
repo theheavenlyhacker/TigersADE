@@ -1,4 +1,4 @@
-import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, uniqueIndex, date } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, uniqueIndex, date, numeric } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const branches = pgTable('branches', {
@@ -88,3 +88,18 @@ export const cashCloses = pgTable('cash_closes', {
   note: text('note'), submittedBy: uuid('submitted_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [unique('cash_closes_branch_business_date_unique').on(t.branchId, t.businessDate)]);
+export const inventoryItems = pgTable('inventory_items', {
+  id: uuid('id').defaultRandom().primaryKey(), name: text('name').notNull().unique(), unit: text('unit').notNull(),
+  unitCost: bigint('unit_cost', { mode: 'bigint' }).notNull(), active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const branchInventory = pgTable('branch_inventory', {
+  branchId: uuid('branch_id').notNull().references(() => branches.id), itemId: uuid('item_id').notNull().references(() => inventoryItems.id),
+  par: numeric('par', { precision: 12, scale: 3 }).notNull(),
+}, t => [primaryKey({ columns: [t.branchId, t.itemId] }), check('branch_inventory_par_nonnegative', sql`${t.par} >= 0`)]);
+export const stockMovements = pgTable('stock_movements', {
+  id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  itemId: uuid('item_id').notNull().references(() => inventoryItems.id), type: text('type', { enum: ['received', 'wastage', 'adjustment', 'count'] }).notNull(),
+  qtyDelta: numeric('qty_delta', { precision: 12, scale: 3 }).notNull(), note: text('note'), createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('stock_movements_branch_item_idx').on(t.branchId, t.itemId), check('stock_movements_type_valid', sql`${t.type} in ('received','wastage','adjustment','count')`)]);

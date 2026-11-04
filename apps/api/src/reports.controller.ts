@@ -48,6 +48,10 @@ export class ReportsController {
   @Get('summary') async summary(@Query() query: SummaryQuery, @Req() req: Request) {
     const ids = await this.scope(query.branch, req);
     const branches = await this.pool.query('select id, day_cutoff::text cutoff, coalesce(daily_target, 0)::text target from branches where id = any($1::uuid[]) order by code', [ids]);
+    const stockValues = await this.pool.query(`select b.id, round(coalesce(sum(coalesce(m.on_hand,0) * i.unit_cost),0))::text as value
+      from branches b cross join inventory_items i left join lateral (select sum(qty_delta) on_hand from stock_movements where branch_id=b.id and item_id=i.id) m on true
+      where b.id=any($1::uuid[]) and i.active group by b.id`, [ids]);
+    const inventoryByBranch = new Map(stockValues.rows.map(row => [row.id as string, row.value as string]));
     const summaries = await Promise.all(branches.rows.map(async ({ id, cutoff, target }) => {
       const today = query.date ?? businessDate(this.clock.now(), cutoff as string);
       const monday = shift(today, -((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7));
@@ -64,7 +68,7 @@ export class ReportsController {
       [id, today, monday, month, prevStart, compareEnd]);
       const expenses = await this.pool.query('select coalesce(sum(amount), 0)::text expenses from expenses where branch_id = $1 and business_date between $2 and $3', [id, month, today]);
       const row = result.rows[0];
-      return { branchId: id, date: today, today: row.today, week: row.week, mtd: row.mtd, sales: row.mtd, customers: row.customers, previous: row.previous, expenses: expenses.rows[0].expenses, dailyTarget: target };
+      return { branchId: id, date: today, today: row.today, week: row.week, mtd: row.mtd, sales: row.mtd, customers: row.customers, previous: row.previous, expenses: expenses.rows[0].expenses, dailyTarget: target, inventoryValue: inventoryByBranch.get(id) ?? '0' };
     }));
     const sum = (key: string) => summaries.reduce((n, b) => n + BigInt(b[key as keyof typeof b] as string), 0n).toString();
     const previous = BigInt(sum('previous'));
@@ -72,7 +76,8 @@ export class ReportsController {
     const target = BigInt(sum('dailyTarget'));
     const today = BigInt(sum('today'));
     const expenses = BigInt(sum('expenses'));
-    return { date: summaries[0]?.date, branches: summaries, today: today.toString(), week: sum('week'), mtd: mtd.toString(), sales: mtd.toString(), customers: summaries.reduce((n, b) => n + b.customers, 0), growth: previous ? Number(mtd - previous) / Number(previous) * 100 : null, expenses: expenses.toString(), operatingContribution: (mtd - expenses).toString(), dailyTarget: target.toString(), targetProgress: target ? Number(today) / Number(target) * 100 : null };
+    const inventoryValue = summaries.reduce((n, b) => n + BigInt(b.inventoryValue), 0n);
+    return { date: summaries[0]?.date, branches: summaries, today: today.toString(), week: sum('week'), mtd: mtd.toString(), sales: mtd.toString(), customers: summaries.reduce((n, b) => n + b.customers, 0), growth: previous ? Number(mtd - previous) / Number(previous) * 100 : null, expenses: expenses.toString(), inventoryValue: inventoryValue.toString(), operatingContribution: (mtd - expenses).toString(), dailyTarget: target.toString(), targetProgress: target ? Number(today) / Number(target) * 100 : null };
   }
 
   @Get('trend') async trend(@Query() query: TrendQuery, @Req() req: Request) {
