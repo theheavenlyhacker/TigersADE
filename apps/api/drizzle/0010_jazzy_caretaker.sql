@@ -11,4 +11,5 @@ CREATE TABLE "staff_members" (
 --> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "staff_member_id" uuid;--> statement-breakpoint
 ALTER TABLE "staff_members" ADD CONSTRAINT "staff_members_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "staff_members_branch_name_unique" ON "staff_members" USING btree ("branch_id","name") WHERE "staff_members"."active";--> statement-breakpoint
 ALTER TABLE "users" ADD CONSTRAINT "users_staff_member_id_staff_members_id_fk" FOREIGN KEY ("staff_member_id") REFERENCES "public"."staff_members"("id") ON DELETE no action ON UPDATE no action;

@@ -35,6 +35,12 @@ export const staffMembers = pgTable('staff_members', {
   name: text('name').notNull(), position: text('position').notNull(), shiftStart: time('shift_start').notNull(), shiftEnd: time('shift_end').notNull(),
   active: boolean('active').notNull().default(true), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [uniqueIndex('staff_members_branch_name_unique').on(t.branchId, t.name).where(sql`${t.active}`)]);
+export const expenses = pgTable('expenses', {
+  id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  categoryId: uuid('category_id').notNull().references(() => expenseCategories.id), businessDate: date('business_date').notNull(),
+  amount: bigint('amount', { mode: 'bigint' }).notNull(), note: text('note'), recordedBy: uuid('recorded_by').notNull().references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('expenses_branch_business_date_idx').on(t.branchId, t.businessDate), check('expenses_amount_positive', sql`${t.amount} > 0`)]);
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull(), passwordHash: text('password_hash').notNull(), name: text('name').notNull(),

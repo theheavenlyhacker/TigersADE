@@ -1,1 +1,0 @@
-ALTER TABLE "staff_members" ADD CONSTRAINT "staff_members_branch_name_unique" UNIQUE("branch_id","name");
