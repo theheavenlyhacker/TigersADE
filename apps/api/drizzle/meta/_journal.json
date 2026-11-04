@@ -43,6 +43,20 @@
       "when": 1793800618453,
       "tag": "0005_easy_machine_man",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793801787545,
+      "tag": "0006_sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793802480950,
+      "tag": "0007_sale_constraints",
+      "breakpoints": true
     }
   ]
 }

@@ -3,14 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Page } from "@/components/ui";
 import { useAuth } from "@/components/Auth";
 import { peso } from "@/lib/data";
-
-type Catalog = {
-  version: string;
-  productCategories: { id: string; name: string }[];
-  products: { id: string; categoryId: string; categoryName: string; name: string; price: string; unitCost: string }[];
-};
-const cacheKey = "catalog";
-const api = process.env.NEXT_PUBLIC_API_URL ?? (typeof window === "undefined" ? "http://localhost:4000" : `http://${window.location.hostname}:4000`);
+import { Catalog, apiUrl, loadCatalog } from "@/lib/catalog";
 const displayMoney = (centavos: string) => peso(Number(centavos) / 100);
 
 export default function P() {
@@ -28,29 +21,14 @@ export default function P() {
   const [prices, setPrices] = useState<Record<string, string>>({});
 
   const refresh = async () => {
-    const cached = localStorage.getItem(cacheKey);
-    const old = cached ? JSON.parse(cached) as Catalog : null;
-    if (old) setCatalog(old);
-    let response = await fetch(`${api}/catalog`, { credentials: "include", headers: old ? { "If-None-Match": old.version } : {} });
-    if (response.status === 304 && old && response.headers.get("X-Catalog-Version") === old.version) { setCatalog(old); return; }
-    if (response.status === 304) response = await fetch(`${api}/catalog`, { credentials: "include" });
-    if (!response.ok) throw new Error("Could not load the catalog");
-    let data = await response.json() as Catalog;
-    if (response.headers.get("X-Catalog-Version") !== data.version) {
-      response = await fetch(`${api}/catalog`, { credentials: "include" });
-      if (!response.ok) throw new Error("Could not refresh the catalog");
-      data = await response.json() as Catalog;
-      if (response.headers.get("X-Catalog-Version") !== data.version) throw new Error("Catalog changed while it was loading");
-    }
-    localStorage.setItem(cacheKey, JSON.stringify(data));
-    setCatalog(data);
+    setCatalog(await loadCatalog());
   };
 
   useEffect(() => { refresh().catch(() => setError("Could not load the catalog.")); }, []);
   const rows = useMemo(() => catalog?.products.filter(p => (category === "All" || p.categoryId === category) && p.name.toLowerCase().includes(q.toLowerCase())) ?? [], [catalog, category, q]);
 
   const mutate = async (path: string, method: string, data: object) => {
-    const response = await fetch(`${api}${path}`, { method, credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    const response = await fetch(`${apiUrl()}${path}`, { method, credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     if (!response.ok) throw new Error("Could not save catalog changes");
     await refresh();
   };

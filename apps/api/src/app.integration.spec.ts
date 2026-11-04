@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { sql } from 'drizzle-orm';
 import { AppModule } from './app.module';
@@ -173,5 +173,47 @@ describe('API foundation (Postgres)', () => {
       const expenseVersion = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
       expect(expenseEdit.headers['x-catalog-version']).toBe(expenseVersion.body.version);
     } finally { await app.close(); }
+  });
+
+  it('records idempotent sales with catalog snapshots, cutoff business days, and gapless concurrent numbers', async () => {
+    const fixedNow = new Date('2026-11-03T19:59:00Z'); // 03:59 Manila
+    const app = await createTestApp('test', fixedNow);
+    const db = app.get<Db>(DB);
+    let branchId: string | undefined;
+    let originalCutoff = '00:00';
+    let archivedProductId: string | undefined;
+    try {
+      const branch = await db.execute(sql`select id, next_sale_no, to_char(day_cutoff, 'HH24:MI') as day_cutoff from branches where code = 'main'`);
+      branchId = branch.rows[0].id as string;
+      originalCutoff = branch.rows[0].day_cutoff as string;
+      const firstSaleNo = Number(branch.rows[0].next_sale_no);
+      await db.execute(sql`update branches set day_cutoff = '04:00' where id = ${branchId}`);
+      const product = await db.execute(sql`select p.id from products p join product_categories c on c.id = p.category_id where p.active and c.active limit 1`);
+      const productId = product.rows[0].id as string;
+      const login = await request(app.getHttpServer()).post('/auth/login').send({ email: 'cashier@tigerscafe.ph', password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+      const cookie = login.headers['set-cookie'][0].split(';')[0];
+      const managerLogin = await request(app.getHttpServer()).post('/auth/login').send({ email: 'main@tigerscafe.ph', password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+      const managerCookie = managerLogin.headers['set-cookie'][0].split(';')[0];
+      const sale = { id: randomUUID(), paymentMethod: 'cash', lines: [{ productId, qty: 2 }] };
+      const created = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cookie).send(sale).expect(201);
+      expect(created.body).toMatchObject({ saleNo: firstSaleNo, businessDate: '2026-11-03', total: expect.any(String), lines: [expect.objectContaining({ productId, qty: 2, productName: expect.any(String), unitPrice: expect.any(String), unitCost: expect.any(String) })] });
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cookie).send(sale).expect(200).expect(({ body }) => expect(body.id).toBe(sale.id));
+      const next = await Promise.all(Array.from({ length: 6 }, () => request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cookie).send({ ...sale, id: randomUUID(), paymentMethod: 'gcash' }).expect(201)));
+      expect(next.map(r => r.body.saleNo).sort((a, b) => a - b)).toEqual([firstSaleNo + 1, firstSaleNo + 2, firstSaleNo + 3, firstSaleNo + 4, firstSaleNo + 5, firstSaleNo + 6]);
+      await request(app.getHttpServer()).get(`/branches/${branchId}/sales?from=2026-11-03&to=2026-11-04`).set('Cookie', cookie).expect(403);
+      const listing = await request(app.getHttpServer()).get(`/branches/${branchId}/sales?from=2026-11-03&to=2026-11-04`).set('Cookie', managerCookie).expect(200);
+      expect(listing.body.map((row: { id: string }) => row.id)).toEqual(expect.arrayContaining([sale.id, ...next.map(r => r.body.id)]));
+      await db.execute(sql`update branches set day_cutoff = '02:00' where id = ${branchId}`);
+      const afterCutoffChange = await request(app.getHttpServer()).get(`/branches/${branchId}/sales?from=2026-11-03&to=2026-11-04`).set('Cookie', managerCookie).expect(200);
+      expect(afterCutoffChange.body.find((row: { id: string }) => row.id === sale.id).businessDate).toBe('2026-11-03');
+      const archived = await db.execute(sql`select id from products where active limit 1`);
+      archivedProductId = archived.rows[0].id as string;
+      await db.execute(sql`update products set active = false where id = ${archived.rows[0].id}`);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cookie).send({ ...sale, id: 'f83a7013-5054-4d0c-8764-2091dbdb2c3d', lines: [{ productId: archived.rows[0].id, qty: 1 }] }).expect(422);
+    } finally {
+      if (archivedProductId) await db.execute(sql`update products set active = true where id = ${archivedProductId}`);
+      if (branchId) await db.execute(sql`update branches set day_cutoff = ${originalCutoff} where id = ${branchId}`);
+      await app.close();
+    }
   });
 });
