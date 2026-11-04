@@ -253,4 +253,41 @@ describe('API foundation (Postgres)', () => {
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${previousDaySale.id}/void`).set('Cookie', manager).send({ reason: 'manager correction' }).expect(201);
     } finally { await app.close(); }
   });
+
+  it('previews and submits an immutable cash close that blocks sales and voids', async () => {
+    const app = await createTestApp('test', new Date('2026-11-04T12:00:00Z'));
+    const db = app.get<Db>(DB);
+    try {
+      const branch = await db.execute(sql`select id from branches where code = 'main'`);
+      const branchId = branch.rows[0].id as string;
+      const login = async (email: string) => {
+        const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+        return result.headers['set-cookie'][0].split(';')[0];
+      };
+      const manager = await login('main@tigerscafe.ph');
+      const owner = await login('roy@tigerscafe.ph');
+      const cashier = await login('cashier@tigerscafe.ph');
+      const product = await db.execute(sql`select id from products where active limit 1`);
+      const initialPreview = await request(app.getHttpServer()).get(`/branches/${branchId}/cash-closes/preview`).set('Cookie', manager).expect(200);
+      const sale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
+      const voidedSale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${voidedSale.body.id}/void`).set('Cookie', cashier).send({ reason: 'test void' }).expect(201);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'gcash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
+      const preview = await request(app.getHttpServer()).get(`/branches/${branchId}/cash-closes/preview`).set('Cookie', manager).expect(200);
+      expect(preview.body).toMatchObject({ businessDate: sale.body.businessDate, cashSales: (BigInt(initialPreview.body.cashSales) + BigInt(sale.body.total)).toString(), close: null });
+      const openingFloat = '10000';
+      const countedCash = (BigInt(openingFloat) + BigInt(preview.body.cashSales) + 500n).toString();
+      const close = await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', manager).send({ businessDate: sale.body.businessDate, openingFloat, countedCash, note: 'drawer counted' }).expect(201);
+      expect(close.body).toMatchObject({ businessDate: sale.body.businessDate, openingFloat, cashSales: preview.body.cashSales, expectedCash: (BigInt(openingFloat) + BigInt(preview.body.cashSales)).toString(), countedCash, variance: '500', note: 'drawer counted' });
+      await request(app.getHttpServer()).get(`/branches/${branchId}/cash-closes/preview?businessDate=${sale.body.businessDate}`).set('Cookie', manager).expect(200).expect(({ body }) => expect(body.close.id).toBe(close.body.id));
+      await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', manager).send({ businessDate: sale.body.businessDate, openingFloat, countedCash }).expect(409);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(409);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${sale.body.id}/void`).set('Cookie', manager).send({ reason: 'after close' }).expect(409);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', owner).send({ businessDate: sale.body.businessDate, openingFloat, countedCash }).expect(403);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', cashier).send({ businessDate: sale.body.businessDate, openingFloat, countedCash }).expect(403);
+      const audit = await db.execute(sql`select action, actor_id from activity_log where action = 'cash_close.submitted' and branch_id = ${branchId} order by id desc limit 1`);
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0].actor_id).toBe((await db.execute(sql`select user_id from sessions where token_hash = ${createHash('sha256').update(manager.slice('ade_session='.length)).digest('hex')}`)).rows[0].user_id);
+    } finally { await app.close(); }
+  });
 });

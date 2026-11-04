@@ -64,6 +64,13 @@
       "when": 1793803770692,
       "tag": "0008_robust_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793805030997,
+      "tag": "0009_cash_closes",
+      "breakpoints": true
     }
   ]
 }
