@@ -11,9 +11,10 @@ const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", 
 export default function D() {
   const { user, branches, scope, setScope, setAiOpen } = useAuth();
   const [summary, setSummary] = useState<any>(null), [trend, setTrend] = useState<any>(null), [best, setBest] = useState<any[]>([]), [peak, setPeak] = useState<any[]>([]), [comparison, setComparison] = useState<any[]>([]), [message, setMessage] = useState("");
+  const [expenseReport, setExpenseReport] = useState<any>(null);
   const branch = user?.role === "owner" ? scope === "all" ? "all" : branches.find((b: any) => b.code === scope)?.id : branches[0]?.id;
   const selected = user?.role === "owner" && scope === "all" ? sampleBranches : sampleBranches.filter(b => b.id === scope);
-  const expenses = selected.reduce((sum, b) => sum + b.expenses, 0), stock = selected.reduce((sum, b) => sum + b.stock, 0);
+  const expenses = Number(expenseReport?.expenses ?? 0) / 100, stock = selected.reduce((sum, b) => sum + b.stock, 0);
   const low = inventory.filter(i => i.qty < i.par && (scope === "all" || i.branch === scope));
   const peakHour = peak.reduce<any>((busiest, hour) => !busiest || Number(hour.sales) > Number(busiest.sales) ? hour : busiest, null);
 
@@ -21,8 +22,8 @@ export default function D() {
     if (!branch) return;
     const get = async (path: string) => { const response = await fetch(`${apiUrl()}/reports/${path}`, { credentials: "include" }); if (!response.ok) throw new Error("Dashboard reports could not be loaded."); return response.json(); };
     const date = today();
-    Promise.all([get(`summary?branch=${branch}&date=${date}`), get(`trend?branch=${branch}&date=${date}`), get(`best-sellers?branch=${branch}&from=${date.slice(0, 7)}-01&to=${date}`), get(`peak-hours?branch=${branch}&from=${date}&to=${date}`), ...(user?.role === "owner" ? [get("comparison")] : [])])
-      .then(([s, t, b, p, c]) => { setSummary(s); setTrend(t); setBest(b); setPeak(p); setComparison(c ?? []); setMessage(""); }).catch(e => setMessage(e.message));
+    Promise.all([get(`summary?branch=${branch}&date=${date}`), get(`trend?branch=${branch}&date=${date}`), get(`best-sellers?branch=${branch}&from=${date.slice(0, 7)}-01&to=${date}`), get(`peak-hours?branch=${branch}&from=${date}&to=${date}`), user?.role === "owner" ? get("comparison") : Promise.resolve([]), get(`expenses?branch=${branch}&month=${date.slice(0, 7)}`)])
+      .then(([s, t, b, p, c, expenses]) => { setSummary(s); setTrend(t); setBest(b); setPeak(p); setComparison(c); setExpenseReport(expenses); setMessage(""); }).catch(e => setMessage(e.message));
   }, [branch, user?.role]);
 
   if (!user) return null;
@@ -38,7 +39,7 @@ export default function D() {
     {user.role === "owner" && <div className="card"><h2 className="font-semibold mb-2">Branch comparison</h2><table className="w-full"><thead><tr><th>Branch</th><th>Today</th><th>This week</th><th>MTD</th><th>Growth</th><th>Share</th></tr></thead><tbody>{comparison.map(b => <tr key={b.id}><td>{b.name}</td><td>{money(b.today)}</td><td>{money(b.week)}</td><td>{money(b.mtd)}</td><td>{b.growth === null ? "—" : `${Number(b.growth).toFixed(1)}%`}</td><td><Bar pct={totalMtd ? Number(b.mtd) / totalMtd * 100 : 0} c="bg-sage"/></td></tr>)}</tbody></table></div>}
     <div className="card"><h2 className="font-semibold">Sales trend</h2><p className="text-sm text-black/50">Daily sales; forecast average {trend ? money(trend.forecast.dailyAverage) : "—"} ± 8%</p>{values.length > 1 && <Line a={values}/>}</div>
     <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold mb-2">Best sellers · this month</h2><table className="w-full"><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Margin</th></tr></thead><tbody>{best.slice(0, 5).map(p => <tr key={p.productId}><td>{p.name}</td><td>{p.units}</td><td>{money(p.revenue)}</td><td>{p.margin}%</td></tr>)}</tbody></table></div><div className="card"><h2 className="font-semibold">Peak hours</h2>{peak.length ? peak.map(p => <p key={p.local_hour} className="flex justify-between py-1"><span>{String(p.local_hour).padStart(2, "0")}:00</span><span>{p.customers} sales · {money(p.sales)}</span></p>) : <p className="text-sm text-black/50">No sales today yet.</p>}<Link href="/sales" className="text-brand underline">Open sales</Link></div></div>
-    <div className="card"><h2 className="font-semibold">Expense tracking</h2><div className="text-3xl font-semibold my-2">{peso(expenses)}</div>{expenseCats.map(c => <div key={c.n} className="flex justify-between py-1.5 text-sm"><span>{c.n}</span><span>{peso(expenses * c.p / 100)} <span className="text-black/40">{c.p}%</span></span></div>)}</div>
+    <div className="card"><h2 className="font-semibold">Expense tracking</h2><div className="text-3xl font-semibold my-2">{peso(expenses)}</div>{(expenseReport?.categories ?? expenseCats.map(c => ({ categoryId: c.n, categoryName: c.n, total: "0" }))).map((c: any) => <div key={c.categoryId} className="flex justify-between py-1.5 text-sm"><span>{c.categoryName}</span><span>{peso(Number(c.total) / 100)} <span className="text-black/40">{expenses ? `${(Number(c.total) / (expenses * 100) * 100).toFixed(1)}%` : "0%"}</span></span></div>)}</div>
     <h2 className="text-xl font-semibold pt-2">Your attention, where it matters</h2><div className="grid md:grid-cols-3 gap-4"><div className="card"><b>{low.length} stock items need attention</b><p className="text-sm text-black/55 my-2">{lowLabel}</p><Link href="/inventory" className="text-brand underline">Review inventory</Link></div><div className="card"><b>{user.role === "owner" ? "Branch sales performance" : "Plan for the lunch rush"}</b><p className="text-sm text-black/55 my-2">{user.role === "owner" ? "Review current branch figures and growth." : peakHour ? `Busiest hour is ${String(peakHour.local_hour).padStart(2, "0")}:00. Keep bar and kitchen coverage aligned.` : "No sales today yet."}</p><Link href="/sales" className="text-brand underline">Open sales</Link></div><div className="card"><b>Review recent activity</b><p className="text-sm text-black/55 my-2">Voids, price changes and stock adjustments are logged.</p><Link href="/staff" className="text-brand underline">View activity</Link></div></div>
   </Page>;
 }

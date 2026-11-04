@@ -1,6 +1,7 @@
 export type Catalog = {
   version: string;
   productCategories: { id: string; name: string }[];
+  expenseCategories: { id: string; name: string }[];
   products: { id: string; categoryId: string; categoryName: string; name: string; price: string; unitCost: string }[];
 };
 

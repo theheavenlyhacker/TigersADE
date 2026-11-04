@@ -1,17 +1,18 @@
 import { Controller, ForbiddenException, Get, Inject, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
-import { IsIn, IsISO8601, IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 import { Pool } from 'pg';
 import { Request } from 'express';
 import { DB_POOL } from './db/db.module';
 import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
+import { businessDate } from './sales.controller';
 
 export class BranchQuery {
   @IsString() @IsNotEmpty() branch!: string;
 }
 export class SummaryQuery extends BranchQuery {
-  @IsISO8601({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
+  @IsOptional() @IsISO8601({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) date?: string;
 }
 export class TrendQuery extends BranchQuery {
   @IsIn(['daily', 'weekly', 'monthly']) granularity = 'daily';
@@ -47,6 +48,15 @@ export class ReportsController {
 
   @Get('summary') async summary(@Query() query: SummaryQuery, @Req() req: Request) {
     const ids = await this.scope(query.branch, req);
+    if (!query.date) {
+      const branches = await this.pool.query('select id, day_cutoff::text cutoff from branches where id = any($1::uuid[]) order by code', [ids]);
+      const rows = await Promise.all(branches.rows.map(({ id, cutoff }) => {
+        const today = businessDate(this.clock.now(), cutoff as string);
+        return this.pool.query(`select $1::uuid as "branchId", coalesce((select sum(total) from sales where branch_id=$1 and voided_at is null and business_date between $2 and $3),0)::text as sales, coalesce((select sum(amount) from expenses where branch_id=$1 and business_date between $2 and $3),0)::text as expenses`, [id, `${today.slice(0, 7)}-01`, today]);
+      }));
+      const summary = rows.map(result => result.rows[0]).map(row => ({ ...row, operatingContribution: (BigInt(row.sales) - BigInt(row.expenses)).toString() }));
+      return { branches: summary, sales: summary.reduce((n, b) => n + BigInt(b.sales), 0n).toString(), expenses: summary.reduce((n, b) => n + BigInt(b.expenses), 0n).toString(), operatingContribution: summary.reduce((n, b) => n + BigInt(b.operatingContribution), 0n).toString() };
+    }
     const today = query.date;
     const monday = shift(today, -((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7));
     const month = `${today.slice(0, 7)}-01`;

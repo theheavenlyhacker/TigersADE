@@ -30,6 +30,12 @@ export const expenseCategories = pgTable('expense_categories', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+export const expenses = pgTable('expenses', {
+  id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  categoryId: uuid('category_id').notNull().references(() => expenseCategories.id), businessDate: date('business_date').notNull(),
+  amount: bigint('amount', { mode: 'bigint' }).notNull(), note: text('note'), recordedBy: uuid('recorded_by').notNull().references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('expenses_branch_business_date_idx').on(t.branchId, t.businessDate), check('expenses_amount_positive', sql`${t.amount} > 0`)]);
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull(), passwordHash: text('password_hash').notNull(), name: text('name').notNull(),
