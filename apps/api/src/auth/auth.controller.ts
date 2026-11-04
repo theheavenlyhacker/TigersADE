@@ -1,12 +1,7 @@
 import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
-import { AuthService, COOKIE } from './auth.service';
-
-const sessionToken = (req: Request) => {
-  const pair = req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${COOKIE}=`));
-  return pair?.slice(COOKIE.length + 1);
-};
+import { AuthService, COOKIE, sessionToken } from './auth.service';
 
 @ApiTags('auth')
 @Controller()

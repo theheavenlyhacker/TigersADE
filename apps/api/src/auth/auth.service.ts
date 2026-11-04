@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Pool } from 'pg';
 import * as argon2 from 'argon2';
 import { DB_POOL } from '../db/db.module';
+import { Request } from 'express';
 
 const COOKIE = 'ade_session';
 const MAX_AGE = 7 * 24 * 60 * 60;
@@ -48,3 +49,7 @@ export class AuthService {
 }
 
 export { COOKIE };
+export const sessionToken = (req: Request) => {
+  const pair = req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${COOKIE}=`));
+  return pair?.slice(COOKIE.length + 1);
+};
