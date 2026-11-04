@@ -6,6 +6,7 @@ import { DB_POOL } from './db/db.module';
 import { logActivity } from './db/activity';
 import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
+import { rethrowUniqueConflict } from './db/unique-conflict';
 
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const name = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 120;
@@ -42,7 +43,9 @@ export class CatalogController {
   @Roles('owner')
   async createProductCategory(@Body() body: Record<string, unknown>) {
     if (!name(body?.name)) throw new UnprocessableEntityException('name is required');
-    const result = await this.pool.query('insert into product_categories (name, updated_at) values ($1, now()) returning id, name', [body.name.trim()]);
+    let result;
+    try { result = await this.pool.query('insert into product_categories (name, updated_at) values ($1, now()) returning id, name', [body.name.trim()]); }
+    catch (error) { rethrowUniqueConflict(error); }
     return result.rows[0];
   }
 
@@ -52,8 +55,10 @@ export class CatalogController {
     if (!uuid(id)) throw new BadRequestException('Invalid category');
     const keys = Object.keys(body ?? {});
     if (!keys.length || keys.some(key => !['name', 'active'].includes(key)) || ('name' in body && !name(body.name)) || ('active' in body && body.active !== false)) throw new UnprocessableEntityException('Set a name or archive with active: false');
-    const result = await this.pool.query(`update product_categories set name = coalesce($1, name), active = case when $2 then false else active end,
-      updated_at = now() where id = $3 returning id, name, active`, [typeof body.name === 'string' ? body.name.trim() : null, body.active === false, id]);
+    let result;
+    try { result = await this.pool.query(`update product_categories set name = coalesce($1, name), active = case when $2 then false else active end,
+      updated_at = now() where id = $3 returning id, name, active`, [typeof body.name === 'string' ? body.name.trim() : null, body.active === false, id]); }
+    catch (error) { rethrowUniqueConflict(error); }
     if (!result.rowCount) throw new NotFoundException();
     return result.rows[0];
   }
@@ -74,7 +79,7 @@ export class CatalogController {
       await logActivity(client, { branchId: null, actorId: actor.user.id, action: 'product.created', payload: { productId: result.rows[0].id, after: result.rows[0] } });
       await client.query('commit');
       return result.rows[0];
-    } catch (error) { await client.query('rollback'); throw error; }
+    } catch (error) { await client.query('rollback'); rethrowUniqueConflict(error); }
     finally { client.release(); }
   }
 
@@ -111,7 +116,7 @@ export class CatalogController {
       if (before.active && !after.active) await logActivity(client, { branchId: null, actorId: actor.user.id, action: 'product.archived', payload: { productId: id, before: { active: true }, after: { active: false } } });
       await client.query('commit');
       return after;
-    } catch (error) { await client.query('rollback'); throw error; }
+    } catch (error) { await client.query('rollback'); rethrowUniqueConflict(error); }
     finally { client.release(); }
   }
 
@@ -119,7 +124,8 @@ export class CatalogController {
   @Roles('owner')
   async createExpenseCategory(@Body() body: Record<string, unknown>) {
     if (!name(body?.name)) throw new UnprocessableEntityException('name is required');
-    return (await this.pool.query('insert into expense_categories (name, updated_at) values ($1, now()) returning id, name', [body.name.trim()])).rows[0];
+    try { return (await this.pool.query('insert into expense_categories (name, updated_at) values ($1, now()) returning id, name', [body.name.trim()])).rows[0]; }
+    catch (error) { rethrowUniqueConflict(error); }
   }
 
   @Patch('expense-categories/:id')
@@ -127,7 +133,9 @@ export class CatalogController {
   async updateExpenseCategory(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     if (!uuid(id)) throw new BadRequestException('Invalid category');
     if (Object.keys(body ?? {}).length !== 1 || !name(body?.name)) throw new UnprocessableEntityException('name is required');
-    const result = await this.pool.query('update expense_categories set name=$1, updated_at=now() where id=$2 returning id, name', [body.name.trim(), id]);
+    let result;
+    try { result = await this.pool.query('update expense_categories set name=$1, updated_at=now() where id=$2 returning id, name', [body.name.trim(), id]); }
+    catch (error) { rethrowUniqueConflict(error); }
     if (!result.rowCount) throw new NotFoundException();
     return result.rows[0];
   }

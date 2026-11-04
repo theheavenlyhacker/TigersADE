@@ -134,6 +134,7 @@ describe('API foundation (Postgres)', () => {
       const manager = await login('main@tigerscafe.ph');
       const suffix = Date.now().toString();
       const category = await request(app.getHttpServer()).post('/product-categories').set('Cookie', owner).send({ name: `Issue6 test category ${suffix}` }).expect(201);
+      await request(app.getHttpServer()).post('/product-categories').set('Cookie', owner).send({ name: `Issue6 test category ${suffix}` }).expect(409);
       const product = await request(app.getHttpServer()).post('/products').set('Cookie', owner).send({ name: `Issue6 test product ${suffix}`, categoryId: category.body.id, price: '25000', unitCost: '9000' }).expect(201);
       const created = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
       expect(created.headers['x-catalog-version']).toBe(created.body.version);
