@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { AccessGuard } from './access.guard';
 import { BranchesController } from './branches.controller';
 import { ActivityController } from './activity.controller';
+import { CatalogController } from '../catalog.controller';
 
-@Module({ controllers: [AuthController, BranchesController, ActivityController], providers: [AuthService, AccessGuard], exports: [AccessGuard] })
+@Module({ controllers: [AuthController, BranchesController, ActivityController, CatalogController], providers: [AuthService, AccessGuard], exports: [AccessGuard] })
 export class AuthModule {}

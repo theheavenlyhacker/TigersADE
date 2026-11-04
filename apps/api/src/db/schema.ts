@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique } from 'drizzle-orm/pg-core';
 
 export const branches = pgTable('branches', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -7,6 +7,25 @@ export const branches = pgTable('branches', {
   dailyTarget: bigint('daily_target', { mode: 'bigint' }),
   dayCutoff: time('day_cutoff').notNull().default('00:00'),
   nextSaleNo: integer('next_sale_no').notNull().default(1),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const productCategories = pgTable('product_categories', {
+  id: uuid('id').defaultRandom().primaryKey(), name: text('name').notNull().unique(),
+  active: boolean('active').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const products = pgTable('products', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  categoryId: uuid('category_id').notNull().references(() => productCategories.id),
+  name: text('name').notNull(), price: bigint('price', { mode: 'bigint' }).notNull(),
+  unitCost: bigint('unit_cost', { mode: 'bigint' }).notNull(), active: boolean('active').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique('products_category_name_unique').on(t.categoryId, t.name)]);
+export const expenseCategories = pgTable('expense_categories', {
+  id: uuid('id').defaultRandom().primaryKey(), name: text('name').notNull().unique(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

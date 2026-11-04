@@ -94,6 +94,7 @@ describe('API foundation (Postgres)', () => {
       await db.execute(sql`insert into user_branches (user_id, branch_id) select u.id, ${main.id} from users u where u.email = 'issue5-cashier@tigerscafe.ph'`);
       const login = async (email: string) => {
         const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+        expect(result.headers['x-catalog-version']).toBeTruthy();
         return result.headers['set-cookie'][0].split(';')[0];
       };
       const owner = await login('roy@tigerscafe.ph');
@@ -118,6 +119,59 @@ describe('API foundation (Postgres)', () => {
       await request(app.getHttpServer()).get(`/activity?branch=${annex.id}`).set('Cookie', manager).expect(403);
       await request(app.getHttpServer()).patch(`/activity/${filtered.body.items[0].id}`).set('Cookie', owner).send({ action: 'edited' }).expect(404);
       await request(app.getHttpServer()).delete(`/activity/${filtered.body.items[0].id}`).set('Cookie', owner).expect(404);
+    } finally { await app.close(); }
+  });
+
+  it('manages products and categories as the owner and versions every catalog response', async () => {
+    const app = await createTestApp('test', new Date());
+    try {
+      const db = app.get<Db>(DB);
+      const login = async (email: string) => {
+        const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+        return result.headers['set-cookie'][0].split(';')[0];
+      };
+      const owner = await login('roy@tigerscafe.ph');
+      const manager = await login('main@tigerscafe.ph');
+      const suffix = Date.now().toString();
+      const category = await request(app.getHttpServer()).post('/product-categories').set('Cookie', owner).send({ name: `Issue6 test category ${suffix}` }).expect(201);
+      await request(app.getHttpServer()).post('/product-categories').set('Cookie', owner).send({ name: `Issue6 test category ${suffix}` }).expect(409);
+      const product = await request(app.getHttpServer()).post('/products').set('Cookie', owner).send({ name: `Issue6 test product ${suffix}`, categoryId: category.body.id, price: '25000', unitCost: '9000' }).expect(201);
+      const created = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(created.headers['x-catalog-version']).toBe(created.body.version);
+      expect(created.body.products).toContainEqual(expect.objectContaining({ id: product.body.id, price: '25000', unitCost: '9000' }));
+      await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).set('If-None-Match', created.body.version).expect(304).expect('X-Catalog-Version', created.body.version);
+      await request(app.getHttpServer()).post('/products').set('Cookie', manager).send({ name: 'Denied', categoryId: category.body.id, price: '1', unitCost: '1' }).expect(403);
+      const priceChange = await request(app.getHttpServer()).patch(`/products/${product.body.id}`).set('Cookie', owner).send({ price: '27000' }).expect(200);
+      const changed = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(changed.body.version).not.toBe(created.body.version);
+      expect(priceChange.headers['x-catalog-version']).toBe(changed.body.version);
+      await request(app.getHttpServer()).patch(`/products/${product.body.id}`).set('Cookie', owner).send({ active: false }).expect(200);
+      const archived = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(archived.body.products.some((p: { id: string }) => p.id === product.body.id)).toBe(false);
+      const audit = await db.execute(sql`select action, payload from activity_log where payload->>'productId' = ${product.body.id} order by id`);
+      expect(audit.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ action: 'product.created' }),
+        expect.objectContaining({ action: 'price.changed', payload: expect.objectContaining({ price: { before: '25000', after: '27000' } }) }),
+        expect.objectContaining({ action: 'product.archived' }),
+      ]));
+      expect((await request(app.getHttpServer()).get('/me').set('Cookie', manager)).headers['x-catalog-version']).toBe(archived.body.version);
+      const persisted = await db.execute(sql`select active from products where id = ${product.body.id}`);
+      expect(persisted.rows[0].active).toBe(false);
+      await request(app.getHttpServer()).patch(`/product-categories/${category.body.id}`).set('Cookie', owner).send({ name: `Issue6 renamed category ${suffix}` }).expect(200);
+      const renamed = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(renamed.body.version).not.toBe(archived.body.version);
+      await request(app.getHttpServer()).patch(`/product-categories/${category.body.id}`).set('Cookie', owner).send({ active: false }).expect(200);
+      const categoriesArchived = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(categoriesArchived.body.productCategories.some((c: { id: string }) => c.id === category.body.id)).toBe(false);
+      expect(categoriesArchived.headers['x-catalog-version']).toBe(categoriesArchived.body.version);
+      const main = await db.execute(sql`select id from branches where code = 'main'`);
+      const branchEdit = await request(app.getHttpServer()).patch(`/branches/${main.rows[0].id}`).set('Cookie', owner).send({ dailyTarget: '2600000' }).expect(200);
+      const branchVersion = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(branchEdit.headers['x-catalog-version']).toBe(branchVersion.body.version);
+      const expenseCategory = await db.execute(sql`select id from expense_categories limit 1`);
+      const expenseEdit = await request(app.getHttpServer()).patch(`/expense-categories/${expenseCategory.rows[0].id}`).set('Cookie', owner).send({ name: `Issue6 expense ${suffix}` }).expect(200);
+      const expenseVersion = await request(app.getHttpServer()).get('/catalog').set('Cookie', manager).expect(200);
+      expect(expenseEdit.headers['x-catalog-version']).toBe(expenseVersion.body.version);
     } finally { await app.close(); }
   });
 });
