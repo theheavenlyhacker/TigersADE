@@ -73,11 +73,12 @@ export class InventoryController {
     if (low !== undefined && !['true', 'false'].includes(low)) throw new UnprocessableEntityException('low must be true or false');
     const result = await this.pool.query(`select i.id as "itemId", i.name, i.unit, i.unit_cost::text as "unitCost", bi.par::text,
       coalesce(sum(sm.qty_delta),0)::text as "onHand", (bi.par is not null and coalesce(sum(sm.qty_delta),0) < bi.par) as "lowStock",
+      coalesce(sum(sm.qty_delta),0) < 0 as "negativeStock",
       round(coalesce(sum(sm.qty_delta),0) * i.unit_cost)::text as value
       from inventory_items i left join branch_inventory bi on bi.item_id=i.id and bi.branch_id=$1
       left join stock_movements sm on sm.item_id=i.id and sm.branch_id=$1 where i.active
       group by i.id, bi.par order by i.name`, [branchId]);
-    return low === 'true' ? result.rows.filter(item => item.lowStock) : result.rows;
+    return low === 'true' ? result.rows.filter(item => item.lowStock || item.negativeStock) : result.rows;
   }
 
   @Put('branches/:branchId/inventory/:itemId') @Roles('owner', 'manager')

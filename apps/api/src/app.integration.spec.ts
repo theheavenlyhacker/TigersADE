@@ -262,7 +262,14 @@ describe('API foundation (Postgres)', () => {
       expect(stock.body).toContainEqual(expect.objectContaining({ itemId: created.body.id, onHand: '2.000', par: '4.000', lowStock: true, value: '6000' }));
       await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: created.body.id, type: 'adjustment', quantity: '-5' }).expect(201);
       stock = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200);
-      expect(stock.body).toContainEqual(expect.objectContaining({ itemId: created.body.id, onHand: '-3.000', lowStock: true, value: '-9000' }));
+      expect(stock.body).toContainEqual(expect.objectContaining({ itemId: created.body.id, onHand: '-3.000', lowStock: true, negativeStock: true, value: '-9000' }));
+      const unpar = await request(app.getHttpServer()).post('/inventory-items').set('Cookie', owner).send({ name: `${name} no par`, unit: 'kg', unitCost: '100' }).expect(201);
+      await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: unpar.body.id, type: 'adjustment', quantity: '-1' }).expect(201);
+      stock = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200);
+      expect(stock.body).toContainEqual(expect.objectContaining({ itemId: unpar.body.id, par: null, onHand: '-1.000', lowStock: false, negativeStock: true }));
+      const lowOnly = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory?low=true`).set('Cookie', manager).expect(200);
+      expect(lowOnly.body.map((row: { itemId: string }) => row.itemId)).toEqual(expect.arrayContaining([created.body.id, unpar.body.id]));
+      await request(app.getHttpServer()).patch(`/inventory-items/${unpar.body.id}`).set('Cookie', owner).send({ active: false }).expect(200);
       const report = await request(app.getHttpServer()).get(`/reports/summary?branch=${main.id}&date=2026-11-04`).set('Cookie', manager).expect(200);
       const baseline = await db.execute(sql`select coalesce(sum(coalesce(m.on_hand,0)*i.unit_cost),0)::bigint::text value from branch_inventory bi join inventory_items i on i.id=bi.item_id and i.active left join lateral (select sum(qty_delta) on_hand from stock_movements where branch_id=bi.branch_id and item_id=bi.item_id) m on true where bi.branch_id=${main.id} and i.id<>${created.body.id}`);
       expect(Number(report.body.inventoryValue)).toBe(Number(baseline.rows[0].value) - 9000);
