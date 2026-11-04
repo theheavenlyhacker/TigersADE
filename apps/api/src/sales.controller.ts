@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Post, Query, Req, Res, UnprocessableEntityException, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, Inject, NotFoundException, Param, Post, Query, Req, Res, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Pool } from 'pg';
 import { Request, Response } from 'express';
@@ -6,6 +6,7 @@ import { DB_POOL } from './db/db.module';
 import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
+import { logActivity } from './db/activity';
 
 const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
@@ -67,11 +68,47 @@ export class SalesController {
     finally { client.release(); }
   }
 
+  @Post(':saleId/void')
+  async void(@Param('branchId') branchId: string, @Param('saleId') saleId: string, @Body() body: Record<string, unknown>, @Req() req: Request) {
+    if (!uuid(branchId) || !uuid(saleId) || typeof body?.reason !== 'string' || !body.reason.trim() || body.reason.trim().length > 1000) {
+      throw new UnprocessableEntityException('A reason of 1 to 1000 characters is required');
+    }
+    const actor = await this.auth.current(sessionToken(req));
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const branch = await client.query('select day_cutoff from branches where id = $1 for update', [branchId]);
+      if (!branch.rowCount) throw new NotFoundException();
+      const result = await client.query(`select id, branch_id, sale_no, business_date::text, voided_at, voided_by, void_reason
+        from sales where id = $1 and branch_id = $2 for update`, [saleId, branchId]);
+      if (!result.rowCount) throw new NotFoundException('Sale not found');
+      const sale = result.rows[0];
+      if (sale.voided_at) throw new ConflictException('Sale is already voided');
+      if (actor.user.role === 'cashier' && sale.business_date !== businessDate(this.clock.now(), branch.rows[0].day_cutoff)) {
+        throw new ForbiddenException('Cashiers can only void sales from the current business day');
+      }
+      // shortcut: cash_closes arrives in the later cash-close slice; remove this guard once it is part of the base schema.
+      const closesTable = await client.query("select to_regclass('public.cash_closes') as table_name");
+      if (closesTable.rows[0].table_name) {
+        const closed = await client.query('select 1 from cash_closes where branch_id = $1 and business_date = $2', [branchId, sale.business_date]);
+        if (closed.rowCount) throw new ConflictException('The business day is already closed');
+      }
+      const voidedAt = this.clock.now();
+      const updated = await client.query(`update sales set voided_at = $3, voided_by = $4, void_reason = $5
+        where id = $1 and branch_id = $2 returning id, branch_id as "branchId", sale_no as "saleNo", business_date::text as "businessDate", voided_at as "voidedAt", voided_by as "voidedBy", void_reason as "voidReason"`,
+      [saleId, branchId, voidedAt, actor.user.id, body.reason.trim()]);
+      await logActivity(client, { branchId, actorId: actor.user.id, action: 'sale.voided', payload: { saleId, saleNo: sale.sale_no, reason: body.reason.trim() } });
+      await client.query('commit');
+      return updated.rows[0];
+    } catch (error) { await client.query('rollback'); throw error; }
+    finally { client.release(); }
+  }
+
   @Get()
   @Roles('owner', 'manager')
   async list(@Param('branchId') branchId: string, @Query('from') from: string, @Query('to') to: string) {
     if (!uuid(branchId) || !date(from) || !date(to) || from > to) throw new UnprocessableEntityException('from and to must be business dates, with from <= to');
-    const result = await this.pool.query(`select id, branch_id as "branchId", sale_no as "saleNo", business_date::text as "businessDate", payment_method as "paymentMethod", total::text, created_at as "createdAt"
+    const result = await this.pool.query(`select id, branch_id as "branchId", sale_no as "saleNo", business_date::text as "businessDate", payment_method as "paymentMethod", total::text, created_at as "createdAt", voided_at as "voidedAt", voided_by as "voidedBy", void_reason as "voidReason"
       from sales where branch_id = $1 and business_date between $2 and $3 order by business_date desc, sale_no desc`, [branchId, from, to]);
     return result.rows;
   }

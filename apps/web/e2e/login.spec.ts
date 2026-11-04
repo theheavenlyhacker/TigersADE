@@ -41,3 +41,23 @@ test('cashier lands on POS and can record a sale', async ({ page }) => {
   await page.getByRole('button', { name: 'Complete sale' }).click();
   await expect(page.getByRole('status')).toContainText('recorded');
 });
+
+test('a manager can void a cashier sale from the sales list', async ({ page }) => {
+  await page.goto('/');
+  await page.getByPlaceholder('Email').fill('cashier@tigerscafe.ph');
+  await page.getByPlaceholder('Password').fill('tigers123');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  await expect(page).toHaveURL(/sales/);
+  await page.getByRole('button', { name: /Flat white/ }).click();
+  await page.getByRole('button', { name: 'Complete sale' }).click();
+  await expect(page.getByRole('status')).toContainText('recorded');
+  await page.getByRole('button', { name: 'Log out' }).click({ force: true });
+  await page.getByPlaceholder('Email').fill('main@tigerscafe.ph');
+  await page.getByPlaceholder('Password').fill('tigers123');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  await page.getByRole('link', { name: 'Sales & revenue' }).click();
+  await page.getByRole('button', { name: 'Void' }).first().click();
+  await page.getByLabel(/Reason for voiding sale/).fill('Duplicate checkout');
+  await page.getByRole('button', { name: 'Confirm void' }).click();
+  await expect(page.getByText('Voided').first()).toBeVisible();
+});

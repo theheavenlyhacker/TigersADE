@@ -57,6 +57,13 @@
       "when": 1793802480950,
       "tag": "0007_sale_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793803770692,
+      "tag": "0008_robust_nightshade",
+      "breakpoints": true
     }
   ]
 }
