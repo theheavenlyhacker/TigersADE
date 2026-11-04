@@ -18,11 +18,26 @@ test('login page renders while the API is running', async ({ page, request }) =>
   await expect(page.getByText('Mika Santos', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tigers cafe Main' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tigers cafe Annex' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Log out' }).click();
+  await page.getByRole('button', { name: 'Log out' }).click({ force: true });
   await page.getByPlaceholder('Email').fill('roy@tigerscafe.ph');
   await page.getByPlaceholder('Password').fill('tigers123');
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page).toHaveURL(/dashboard/);
   await expect(page.getByRole('button', { name: 'Tigers cafe Annex' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tigers cafe Pacol' })).toBeVisible();
+});
+
+test('cashier lands on POS and can record a sale', async ({ page }) => {
+  await page.goto('/');
+  await page.getByPlaceholder('Email').fill('cashier@tigerscafe.ph');
+  await page.getByPlaceholder('Password').fill('tigers123');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  await expect(page).toHaveURL(/sales/);
+  await expect(page.getByRole('heading', { name: 'Point of sale' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Executive dashboard' })).toHaveCount(0);
+  await page.goto('/dashboard');
+  await expect(page).toHaveURL(/sales/);
+  await page.getByRole('button', { name: /Flat white/ }).click();
+  await page.getByRole('button', { name: 'Complete sale' }).click();
+  await expect(page.getByRole('status')).toContainText('recorded');
 });

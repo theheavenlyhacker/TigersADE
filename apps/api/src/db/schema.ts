@@ -1,4 +1,5 @@
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, date } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const branches = pgTable('branches', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -51,3 +52,17 @@ export const activityLog = pgTable('activity_log', {
   payload: jsonb('payload').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('activity_log_branch_created_idx').on(t.branchId, t.createdAt.desc())]);
+export const sales = pgTable('sales', {
+  id: uuid('id').primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  saleNo: integer('sale_no').notNull(), businessDate: date('business_date').notNull(),
+  paymentMethod: text('payment_method', { enum: ['cash', 'gcash', 'maya', 'card'] }).notNull(),
+  total: bigint('total', { mode: 'bigint' }).notNull(), cashierId: uuid('cashier_id').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique('sales_branch_sale_no_unique').on(t.branchId, t.saleNo), index('sales_branch_business_date_idx').on(t.branchId, t.businessDate),
+  check('sales_sale_no_positive', sql`${t.saleNo} > 0`), check('sales_total_nonnegative', sql`${t.total} >= 0`),
+  check('sales_payment_method_valid', sql`${t.paymentMethod} in ('cash', 'gcash', 'maya', 'card')`)]);
+export const saleLines = pgTable('sale_lines', {
+  id: uuid('id').defaultRandom().primaryKey(), saleId: uuid('sale_id').notNull().references(() => sales.id),
+  productId: uuid('product_id').notNull().references(() => products.id), productName: text('product_name').notNull(),
+  unitPrice: bigint('unit_price', { mode: 'bigint' }).notNull(), unitCost: bigint('unit_cost', { mode: 'bigint' }).notNull(), qty: integer('qty').notNull(),
+}, t => [check('sale_lines_qty_positive', sql`${t.qty} > 0`), check('sale_lines_unit_price_nonnegative', sql`${t.unitPrice} >= 0`), check('sale_lines_unit_cost_nonnegative', sql`${t.unitCost} >= 0`)]);
