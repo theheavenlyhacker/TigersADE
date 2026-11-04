@@ -255,11 +255,12 @@ describe('API foundation (Postgres)', () => {
   });
 
   it('previews and submits an immutable cash close that blocks sales and voids', async () => {
-    const app = await createTestApp('test', new Date('2026-11-04T12:00:00Z'));
+    const app = await createTestApp('test', new Date('2030-01-15T12:00:00Z'));
     const db = app.get<Db>(DB);
     try {
       const branch = await db.execute(sql`select id from branches where code = 'main'`);
       const branchId = branch.rows[0].id as string;
+      const otherBranch = await db.execute(sql`select id from branches where code = 'annex'`);
       const login = async (email: string) => {
         const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
         return result.headers['set-cookie'][0].split(';')[0];
@@ -268,7 +269,10 @@ describe('API foundation (Postgres)', () => {
       const owner = await login('roy@tigerscafe.ph');
       const cashier = await login('cashier@tigerscafe.ph');
       const product = await db.execute(sql`select id from products where active limit 1`);
+      await request(app.getHttpServer()).get(`/branches/${otherBranch.rows[0].id}/cash-closes/preview`).set('Cookie', manager).expect(403);
       const initialPreview = await request(app.getHttpServer()).get(`/branches/${branchId}/cash-closes/preview`).set('Cookie', manager).expect(200);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', manager).send({ businessDate: '2030-01-16', openingFloat: '0', countedCash: '0' }).expect(422);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', manager).send({ businessDate: '0000-01-01', openingFloat: '0', countedCash: '0' }).expect(422);
       const sale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
       const voidedSale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${voidedSale.body.id}/void`).set('Cookie', cashier).send({ reason: 'test void' }).expect(201);
@@ -288,6 +292,9 @@ describe('API foundation (Postgres)', () => {
       const audit = await db.execute(sql`select action, actor_id from activity_log where action = 'cash_close.submitted' and branch_id = ${branchId} order by id desc limit 1`);
       expect(audit.rows).toHaveLength(1);
       expect(audit.rows[0].actor_id).toBe((await db.execute(sql`select user_id from sessions where token_hash = ${createHash('sha256').update(manager.slice('ade_session='.length)).digest('hex')}`)).rows[0].user_id);
-    } finally { await app.close(); }
+    } finally {
+      await app.get<Db>(DB).execute(sql`delete from cash_closes where business_date = '2030-01-15'`);
+      await app.close();
+    }
   });
 });

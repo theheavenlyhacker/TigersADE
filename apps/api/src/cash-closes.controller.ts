@@ -7,21 +7,8 @@ import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { logActivity } from './db/activity';
 import { CLOCK, Clock } from './clock';
-
-const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-const date = (v: unknown): v is string => {
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
-  const parsed = new Date(`${v}T00:00:00Z`);
-  return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === v;
-};
+import { businessDate as getBusinessDate, date, uuid } from './business-date';
 const money = (v: unknown): v is string => typeof v === 'string' && /^\d{1,18}$/.test(v) && BigInt(v) <= 9223372036854775807n;
-
-function businessDate(now: Date, cutoff: string) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  const day = `${values.year}-${values.month}-${values.day}`;
-  return `${values.hour}:${values.minute}:00` < cutoff.slice(0, 5) + ':00' ? new Date(Date.parse(`${day}T00:00:00Z`) - 86400000).toISOString().slice(0, 10) : day;
-}
 
 @ApiTags('cash closes')
 @Controller('branches/:branchId/cash-closes')
@@ -32,10 +19,11 @@ export class CashClosesController {
 
   @Get('preview')
   async preview(@Param('branchId') branchId: string, @Query('businessDate') requestedDate: string) {
-    if (!uuid(branchId) || (requestedDate !== undefined && !date(requestedDate))) throw new UnprocessableEntityException('businessDate must be a business date');
+    if (!uuid(branchId)) throw new UnprocessableEntityException('Invalid branch');
+    if (requestedDate !== undefined && !date(requestedDate)) throw new UnprocessableEntityException('businessDate must be a valid business date');
     const branch = await this.pool.query('select day_cutoff from branches where id = $1', [branchId]);
     if (!branch.rowCount) throw new NotFoundException();
-    const businessDate = requestedDate ?? this.currentBusinessDate(branch.rows[0].day_cutoff);
+    const businessDate = requestedDate ?? getBusinessDate(this.clock.now(), branch.rows[0].day_cutoff);
     const [sales, close] = await Promise.all([
       this.pool.query(`select coalesce(sum(total), 0)::text as "cashSales" from sales where branch_id = $1 and business_date = $2 and payment_method = 'cash' and voided_at is null`, [branchId, businessDate]),
       this.pool.query(`select id, opening_float as "openingFloat", cash_sales as "cashSales", expected_cash as "expectedCash", counted_cash as "countedCash", variance, note from cash_closes where branch_id = $1 and business_date = $2`, [branchId, businessDate]),
@@ -52,8 +40,9 @@ export class CashClosesController {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      const branch = await client.query('select id from branches where id = $1 for update', [branchId]);
+      const branch = await client.query('select id, day_cutoff from branches where id = $1 for update', [branchId]);
       if (!branch.rowCount) throw new NotFoundException();
+      if (body.businessDate > getBusinessDate(this.clock.now(), branch.rows[0].day_cutoff)) throw new UnprocessableEntityException('Cannot close a business day that has not started');
       const sales = await client.query(`select coalesce(sum(total), 0)::text as cash_sales from sales where branch_id = $1 and business_date = $2 and payment_method = 'cash' and voided_at is null`, [branchId, body.businessDate]);
       const opening = BigInt(body.openingFloat);
       const cashSales = BigInt(sales.rows[0].cash_sales);
@@ -72,16 +61,5 @@ export class CashClosesController {
       if ((error as { code?: string })?.code === '23505') throw new ConflictException('A cash close already exists for this business day');
       throw error;
     } finally { client.release(); }
-  }
-
-  @Get()
-  async list(@Param('branchId') branchId: string) {
-    if (!uuid(branchId)) throw new UnprocessableEntityException('Invalid branch');
-    const result = await this.pool.query(`select id, business_date::text as "businessDate", opening_float::text as "openingFloat", cash_sales::text as "cashSales", expected_cash::text as "expectedCash", counted_cash::text as "countedCash", variance::text, note, submitted_by as "submittedBy", created_at as "createdAt" from cash_closes where branch_id = $1 order by business_date desc`, [branchId]);
-    return result.rows;
-  }
-
-  private currentBusinessDate(cutoff: string) {
-    return businessDate(this.clock.now(), cutoff);
   }
 }

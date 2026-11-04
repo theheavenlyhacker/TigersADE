@@ -7,18 +7,8 @@ import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
 import { logActivity } from './db/activity';
-
-const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+import { businessDate, date, uuid } from './business-date';
 const paymentMethods = ['cash', 'gcash', 'maya', 'card'];
-
-function businessDate(now: Date, cutoff: string) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  const day = `${values.year}-${values.month}-${values.day}`;
-  return `${values.hour}:${values.minute}:00` < cutoff.slice(0, 5) + ':00'
-    ? new Date(Date.parse(`${day}T00:00:00Z`) - 86400000).toISOString().slice(0, 10) : day;
-}
 
 @ApiTags('sales')
 @Controller('branches/:branchId/sales')
