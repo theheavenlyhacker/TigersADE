@@ -1,0 +1,6 @@
+@tailwind base;@tailwind components;@tailwind utilities;
+body{background:#f6f6f2;color:#1b2b24;font-family:ui-sans-serif,system-ui,"Segoe UI",sans-serif}
+.card{@apply bg-white border border-black/5 rounded-2xl p-5}
+.btn{@apply rounded-lg border border-black/10 bg-white px-4 py-2 text-sm hover:bg-mint}
+.btn-p{@apply rounded-lg bg-brand text-white px-4 py-2 text-sm hover:opacity-90}
+th{@apply text-left font-normal text-sm text-black/50 py-2}td{@apply py-3 border-t border-black/5}
