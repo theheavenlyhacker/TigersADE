@@ -79,4 +79,45 @@ describe('API foundation (Postgres)', () => {
       expect(badEmail.body).toEqual(badPassword.body);
     } finally { await app.close(); }
   });
+
+  it('lets only the owner change branch settings and lists immutable audit entries newest first with paging', async () => {
+    const app = await createTestApp('test', new Date());
+    try {
+      const db = app.get<Db>(DB);
+      const branches = await db.execute(sql`select id, code from branches order by code`);
+      const main = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'main')!;
+      const annex = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'annex')!;
+      await db.execute(sql`delete from activity_log where branch_id = ${main.id}`);
+      await db.execute(sql`update branches set daily_target = null, day_cutoff = '00:00' where id = ${main.id}`);
+      await db.execute(sql`delete from users where email = 'issue5-cashier@tigerscafe.ph'`);
+      await db.execute(sql`insert into users (email, password_hash, name, role) select 'issue5-cashier@tigerscafe.ph', password_hash, 'Test Cashier', 'cashier' from users where email = 'main@tigerscafe.ph'`);
+      await db.execute(sql`insert into user_branches (user_id, branch_id) select u.id, ${main.id} from users u where u.email = 'issue5-cashier@tigerscafe.ph'`);
+      const login = async (email: string) => {
+        const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+        return result.headers['set-cookie'][0].split(';')[0];
+      };
+      const owner = await login('roy@tigerscafe.ph');
+      const manager = await login('main@tigerscafe.ph');
+      const cashier = await login('issue5-cashier@tigerscafe.ph');
+      await request(app.getHttpServer()).patch(`/branches/${main.id}`).set('Cookie', manager).send({ dailyTarget: '2500000' }).expect(403);
+      await request(app.getHttpServer()).patch(`/branches/${main.id}`).set('Cookie', cashier).send({ dailyTarget: '2500000' }).expect(403);
+      await request(app.getHttpServer()).patch(`/branches/${main.id}`).set('Cookie', owner).send({ dailyTarget: '2500000' }).expect(200);
+      await request(app.getHttpServer()).patch(`/branches/${main.id}`).set('Cookie', owner).send({ dayCutoff: '04:30' }).expect(200);
+      const settings = await db.execute(sql`select daily_target, day_cutoff from branches where id = ${main.id}`);
+      expect(settings.rows[0]).toMatchObject({ daily_target: '2500000', day_cutoff: '04:30:00' });
+      const audited = await db.execute(sql`select count(*)::int as count from activity_log where branch_id = ${main.id}`);
+      expect(audited.rows[0].count).toBe(2);
+      const filtered = await request(app.getHttpServer()).get(`/activity?branch=${main.id}&limit=1`).set('Cookie', owner).expect(200);
+      expect(filtered.body.items).toHaveLength(1);
+      const ownerId = await db.execute(sql`select id from users where email = 'roy@tigerscafe.ph'`);
+      expect(filtered.body.items[0]).toMatchObject({ branchId: main.id, actorId: ownerId.rows[0].id, actorName: 'Roy Fabay', action: 'branch.cutoff_changed', payload: { dayCutoff: { before: '00:00', after: '04:30' } } });
+      expect(filtered.body.nextBefore).toBeTruthy();
+      const older = await request(app.getHttpServer()).get(`/activity?branch=${main.id}&limit=1&before=${filtered.body.nextBefore}`).set('Cookie', owner).expect(200);
+      expect(older.body.items[0]).toMatchObject({ action: 'branch.target_changed', payload: { dailyTarget: { before: null, after: '2500000' } } });
+      await request(app.getHttpServer()).get('/activity?before=99999999999999999999').set('Cookie', owner).expect(422);
+      await request(app.getHttpServer()).get(`/activity?branch=${annex.id}`).set('Cookie', manager).expect(403);
+      await request(app.getHttpServer()).patch(`/activity/${filtered.body.items[0].id}`).set('Cookie', owner).send({ action: 'edited' }).expect(404);
+      await request(app.getHttpServer()).delete(`/activity/${filtered.body.items[0].id}`).set('Cookie', owner).expect(404);
+    } finally { await app.close(); }
+  });
 });

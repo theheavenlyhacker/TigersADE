@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, pgTable, primaryKey, text, time, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial } from 'drizzle-orm/pg-core';
 
 export const branches = pgTable('branches', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -24,3 +24,11 @@ export const sessions = pgTable('sessions', {
   tokenHash: text('token_hash').primaryKey(), userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 }, t => [index('sessions_user_id_idx').on(t.userId)]);
+export const activityLog = pgTable('activity_log', {
+  id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+  branchId: uuid('branch_id').references(() => branches.id),
+  actorId: uuid('actor_id').notNull().references(() => users.id),
+  action: text('action').notNull(),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('activity_log_branch_created_idx').on(t.branchId, t.createdAt.desc())]);
