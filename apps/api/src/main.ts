@@ -15,7 +15,7 @@ export function setupApiDocs(app: import('@nestjs/common').INestApplication) {
 
 export async function createApp() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000' });
+  app.enableCors({ origin: process.env.WEB_ORIGIN ? [process.env.WEB_ORIGIN] : ['http://localhost:3000', 'http://127.0.0.1:3000'], credentials: true });
   setupApiDocs(app);
   return app;
 }

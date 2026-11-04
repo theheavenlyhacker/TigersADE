@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { sql } from 'drizzle-orm';
 import { AppModule } from './app.module';
@@ -53,5 +54,29 @@ describe('API foundation (Postgres)', () => {
     } finally {
       await prodApp.close();
     }
+  });
+
+  it('limits a branch manager to their assigned branch on the API', async () => {
+    const app = await createTestApp('test', new Date());
+    try {
+      const db = app.get<Db>(DB);
+      const branches = await db.execute(sql`select id, code from branches order by code`);
+      const main = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'main')!;
+      const other = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code !== 'main')!;
+      const login = await request(app.getHttpServer()).post('/auth/login').send({ email: 'main@tigerscafe.ph', password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+      const cookie = login.headers['set-cookie'][0].split(';')[0];
+      const token = cookie.slice('ade_session='.length);
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      await db.execute(sql`update sessions set expires_at = now() + interval '1 day' where token_hash = ${tokenHash}`);
+      await request(app.getHttpServer()).get(`/branches/${main.id}`).set('Cookie', cookie).expect(200);
+      await request(app.getHttpServer()).get(`/branches/${other.id}`).set('Cookie', cookie).expect(403);
+      const session = await db.execute(sql`select expires_at > now() + interval '6 days' as extended from sessions where token_hash = ${tokenHash}`);
+      expect(session.rows[0].extended).toBe(true);
+      await request(app.getHttpServer()).post('/auth/logout').set('Cookie', cookie).expect(201);
+      await request(app.getHttpServer()).get('/me').set('Cookie', cookie).expect(401);
+      const badPassword = await request(app.getHttpServer()).post('/auth/login').send({ email: 'main@tigerscafe.ph', password: 'wrong' }).expect(401);
+      const badEmail = await request(app.getHttpServer()).post('/auth/login').send({ email: 'missing@tigerscafe.ph', password: 'wrong' }).expect(401);
+      expect(badEmail.body).toEqual(badPassword.body);
+    } finally { await app.close(); }
   });
 });
