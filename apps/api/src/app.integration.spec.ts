@@ -250,6 +250,52 @@ describe('API foundation (Postgres)', () => {
     }
   });
 
+  it('defaults report dates to the branch business day before its cutoff', async () => {
+    const app = await createTestApp('test', new Date('2026-11-04T16:17:00Z'));
+    const fixtureSaleIds: string[] = [];
+    let branchId: string | undefined;
+    let originalCutoff: string | undefined;
+    try {
+      const db = app.get<Db>(DB);
+      const branch = await db.execute(sql`select id, day_cutoff::text cutoff from branches where code = 'main'`);
+      branchId = branch.rows[0].id as string;
+      originalCutoff = branch.rows[0].cutoff as string;
+      await db.execute(sql`update branches set day_cutoff = '04:30' where id = ${branchId}`);
+      const product = await db.execute(sql`select id, price::text, unit_cost::text from products where active limit 1`);
+      const cashier = await db.execute(sql`select id from users where email = 'cashier@tigerscafe.ph'`);
+      const nextNo = await db.execute(sql`select coalesce(max(sale_no), 0)::int + 1 n from sales where branch_id = ${branchId}`);
+      const id = randomUUID();
+      fixtureSaleIds.push(id);
+      await db.execute(sql`insert into sales (id, branch_id, sale_no, business_date, payment_method, total, cashier_id, created_at)
+        values (${id}, ${branchId}, ${nextNo.rows[0].n}, '2026-11-04', 'cash', 43210, ${cashier.rows[0].id}, '2026-11-04T16:10:00Z')`);
+      await db.execute(sql`insert into sale_lines (sale_id, product_id, product_name, unit_price, unit_cost, qty)
+        values (${id}, ${product.rows[0].id}, 'Before cutoff fixture', 43210, 21000, 1)`);
+      const login = await request(app.getHttpServer()).post('/auth/login').send({ email: 'main@tigerscafe.ph', password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+      const cookie = login.headers['set-cookie'][0].split(';')[0];
+      const summary = await request(app.getHttpServer()).get(`/reports/summary?branch=${branchId}`).set('Cookie', cookie).expect(200);
+      expect(summary.body.date).toBe('2026-11-04');
+      expect(BigInt(summary.body.today)).toBeGreaterThanOrEqual(43210n);
+      expect(summary.body).toHaveProperty('expenses');
+      expect(BigInt(summary.body.operatingContribution)).toBe(BigInt(summary.body.mtd) - BigInt(summary.body.expenses));
+      const trend = await request(app.getHttpServer()).get(`/reports/trend?branch=${branchId}`).set('Cookie', cookie).expect(200);
+      expect(trend.body.series.at(-1)).toEqual(expect.objectContaining({ date: '2026-11-04' }));
+      const best = await request(app.getHttpServer()).get(`/reports/best-sellers?branch=${branchId}&from=2026-11-01&to=${summary.body.date}`).set('Cookie', cookie).expect(200);
+      expect(best.body).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Before cutoff fixture', units: 1, revenue: '43210' })]));
+      const peak = await request(app.getHttpServer()).get(`/reports/peak-hours?branch=${branchId}&from=${summary.body.date}&to=${summary.body.date}`).set('Cookie', cookie).expect(200);
+      expect(BigInt(peak.body.find((row: any) => row.local_hour === 0).sales)).toBeGreaterThanOrEqual(43210n);
+      const ownerLogin = await request(app.getHttpServer()).post('/auth/login').send({ email: 'roy@tigerscafe.ph', password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+      const comparison = await request(app.getHttpServer()).get('/reports/comparison').set('Cookie', ownerLogin.headers['set-cookie'][0].split(';')[0]).expect(200);
+      expect(comparison.body.find((row: any) => row.id === branchId).date).toBe('2026-11-04');
+    } finally {
+      const db = app.get<Db>(DB);
+      try {
+        await db.execute(sql`delete from sale_lines where sale_id = any(${sql.param(fixtureSaleIds)}::uuid[])`);
+        await db.execute(sql`delete from sales where id = any(${sql.param(fixtureSaleIds)}::uuid[])`);
+        if (branchId && originalCutoff) await db.execute(sql`update branches set day_cutoff = ${originalCutoff} where id = ${branchId}`);
+      } finally { await app.close(); }
+    }
+  });
+
   it('records idempotent sales with catalog snapshots, cutoff business days, and gapless concurrent numbers', async () => {
     const fixedNow = new Date('2026-11-03T19:59:00Z'); // 03:59 Manila
     const app = await createTestApp('test', fixedNow);
