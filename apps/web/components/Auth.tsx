@@ -1,13 +1,15 @@
 "use client";
 import {createContext,useContext,useEffect,useState,ReactNode} from "react";
-import {users,branches} from "@/lib/data";
-type U=(typeof users)[number];
+import {branches as sampleBranches} from "@/lib/data";
+type U={id:string;email:string;name:string;role:"owner"|"manager"|"cashier"};
+type B={id:string;code:string;name:string};
 const Ctx=createContext<any>(null);
 export function AuthProvider({children}:{children:ReactNode}){
-const [user,setUser]=useState<U|null>(null);const [loaded,setLoaded]=useState(false);const [scope,setScope]=useState("all");const [aiOpen,setAiOpen]=useState(false);
-useEffect(()=>{try{const id=localStorage.getItem("ade-user");const u=users.find(x=>x.id===id);if(u){setUser(u);setScope(u.branch||"all")}}catch{}setLoaded(true)},[]);
-const login=(id:string)=>{const u=users.find(x=>x.id===id)!;localStorage.setItem("ade-user",id);setUser(u);setScope(u.branch||"all")};
-const logout=()=>{localStorage.removeItem("ade-user");setUser(null)};
-const list=scope==="all"?branches:branches.filter(b=>b.id===scope);
-return <Ctx.Provider value={{aiOpen,setAiOpen,user,loaded,login,logout,scope,setScope,list}}>{children}</Ctx.Provider>}
+const [user,setUser]=useState<U|null>(null);const [branches,setBranches]=useState<B[]>([]);const [list,setList]=useState<typeof sampleBranches>([]);const [loaded,setLoaded]=useState(false);const [scope,setScope]=useState("all");const [aiOpen,setAiOpen]=useState(false);
+const api=process.env.NEXT_PUBLIC_API_URL??(typeof window==="undefined"?"http://localhost:4000":`http://${window.location.hostname}:4000`);
+const loadBranches=(data:any)=>{setBranches(data.branches);setList(sampleBranches.filter(b=>data.branches.some((apiBranch:B)=>apiBranch.code===b.id)));setScope(data.user.role==="owner"?"all":data.branches[0]?.code??"")};
+useEffect(()=>{fetch(`${api}/me`,{credentials:"include"}).then(r=>r.ok?r.json():null).then(data=>{if(data){setUser(data.user);loadBranches(data)}}).catch(()=>{}).finally(()=>setLoaded(true))},[api]);
+const login=async(email:string,password:string):Promise<U>=>{const r=await fetch(`${api}/auth/login`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});if(!r.ok)throw new Error("Invalid email or password");const u:U=await r.json();const me=await fetch(`${api}/me`,{credentials:"include"});if(!me.ok)throw new Error("Invalid email or password");const data=await me.json();setUser(u);loadBranches(data);return u};
+const logout=async()=>{await fetch(`${api}/auth/logout`,{method:"POST",credentials:"include"});setUser(null);setBranches([]);setList([]);setScope("all")};
+return <Ctx.Provider value={{aiOpen,setAiOpen,user,loaded,login,logout,scope,setScope,list,branches}}>{children}</Ctx.Provider>}
 export const useAuth=()=>useContext(Ctx);
