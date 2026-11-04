@@ -47,6 +47,8 @@ async function main() {
     const todayUtc = Date.parse(`${today}T00:00:00Z`);
     for (const [code] of branches) {
       const branch = await pool.query('select id from branches where code = $1', [code]);
+      const hasSales = await pool.query('select 1 from sales where branch_id = $1 limit 1', [branch.rows[0].id]);
+      if (hasSales.rowCount) continue;
       for (let daysAgo = 59; daysAgo >= 0; daysAgo--) {
         const businessDate = new Date(todayUtc - daysAgo * 86400000).toISOString().slice(0, 10);
         const saleId = seedUuid(`seed-sale:${code}:${businessDate}`);

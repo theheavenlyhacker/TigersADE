@@ -3,7 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Pool } from 'pg';
 import { Request, Response } from 'express';
 import { DB_POOL } from './db/db.module';
-import { AccessGuard } from './auth/access.guard';
+import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
 
@@ -68,6 +68,7 @@ export class SalesController {
   }
 
   @Get()
+  @Roles('owner', 'manager')
   async list(@Param('branchId') branchId: string, @Query('from') from: string, @Query('to') to: string) {
     if (!uuid(branchId) || !date(from) || !date(to) || from > to) throw new UnprocessableEntityException('from and to must be business dates, with from <= to');
     const result = await this.pool.query(`select id, branch_id as "branchId", sale_no as "saleNo", business_date::text as "businessDate", payment_method as "paymentMethod", total::text, created_at as "createdAt"
