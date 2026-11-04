@@ -7,18 +7,8 @@ import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
 import { logActivity } from './db/activity';
-
-const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+import { businessDate, date, uuid } from './business-date';
 const paymentMethods = ['cash', 'gcash', 'maya', 'card'];
-
-export function businessDate(now: Date, cutoff: string) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  const day = `${values.year}-${values.month}-${values.day}`;
-  return `${values.hour}:${values.minute}:00` < cutoff.slice(0, 5) + ':00'
-    ? new Date(Date.parse(`${day}T00:00:00Z`) - 86400000).toISOString().slice(0, 10) : day;
-}
 
 @ApiTags('sales')
 @Controller('branches/:branchId/sales')
@@ -46,6 +36,9 @@ export class SalesController {
         const row = existing.rows[0];
         return { id: row.id, branchId: row.branch_id, saleNo: row.sale_no, businessDate: row.business_date, paymentMethod: row.payment_method, total: row.total, lines: lines.rows };
       }
+      const saleDate = businessDate(this.clock.now(), branch.rows[0].day_cutoff);
+      const closed = await client.query('select 1 from cash_closes where branch_id = $1 and business_date = $2', [branchId, saleDate]);
+      if (closed.rowCount) throw new ConflictException('This business day is already closed');
       const productIds = body.lines.map((line: any) => line.productId);
       const products = await client.query('select id, name, price::text, unit_cost::text, active from products where id = any($1::uuid[])', [productIds]);
       if (products.rowCount !== productIds.length) throw new NotFoundException('Product not found');
@@ -54,10 +47,9 @@ export class SalesController {
       const saleLines = body.lines.map((line: any) => ({ ...byId.get(line.productId), productId: line.productId, qty: line.qty }));
       const total = saleLines.reduce((sum: bigint, line: any) => sum + BigInt(line.price) * BigInt(line.qty), 0n);
       if (total > 9223372036854775807n) throw new UnprocessableEntityException('Sale total is too large');
-      const date = businessDate(this.clock.now(), branch.rows[0].day_cutoff);
       const allocated = await client.query('update branches set next_sale_no = next_sale_no + 1 where id = $1 returning next_sale_no - 1 as sale_no', [branchId]);
       const sale = await client.query(`insert into sales (id, branch_id, sale_no, business_date, payment_method, total, cashier_id)
-        values ($1, $2, $3, $4, $5, $6, $7) returning id, branch_id, sale_no, business_date::text, payment_method, total::text`, [body.id, branchId, allocated.rows[0].sale_no, date, body.paymentMethod, total.toString(), actor.user.id]);
+        values ($1, $2, $3, $4, $5, $6, $7) returning id, branch_id, sale_no, business_date::text, payment_method, total::text`, [body.id, branchId, allocated.rows[0].sale_no, saleDate, body.paymentMethod, total.toString(), actor.user.id]);
       for (const line of saleLines) await client.query(`insert into sale_lines (sale_id, product_id, product_name, unit_price, unit_cost, qty)
         values ($1, $2, $3, $4, $5, $6)`, [body.id, line.productId, line.name, line.price, line.unit_cost, line.qty]);
       await client.query('commit');
@@ -84,6 +76,8 @@ export class SalesController {
       if (!result.rowCount) throw new NotFoundException('Sale not found');
       const sale = result.rows[0];
       if (sale.voided_at) throw new ConflictException('Sale is already voided');
+      const closed = await client.query('select 1 from cash_closes where branch_id = $1 and business_date = $2', [branchId, sale.business_date]);
+      if (closed.rowCount) throw new ConflictException('This business day is already closed');
       if (actor.user.role === 'cashier' && sale.business_date !== businessDate(this.clock.now(), branch.rows[0].day_cutoff)) {
         throw new ForbiddenException('Cashiers can only void sales from the current business day');
       }

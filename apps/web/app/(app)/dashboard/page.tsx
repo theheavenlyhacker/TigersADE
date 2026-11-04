@@ -6,10 +6,15 @@ import { Page, Stat, Bar, Line } from "@/components/ui";
 import { peso, branches as sampleBranches, inventory, products, bname, expenseCats } from "@/lib/data";
 import { apiUrl } from "@/lib/catalog";
 
+const centavos = (value: string) => { const parts = /^(\d{1,16})(?:\.(\d{1,2}))?$/.exec(value); if (!parts) throw new Error("Enter a non-negative amount with up to two decimal places."); return (BigInt(parts[1]) * BigInt(100) + BigInt((parts[2] ?? "").padEnd(2, "0"))).toString(); };
+const centavoPeso = (value: string) => { const amount = BigInt(value), hundred = BigInt(100), absolute = amount < BigInt(0) ? -amount : amount; return `${amount < BigInt(0) ? "-" : ""}₱${(absolute / hundred).toLocaleString("en-PH")}.${(absolute % hundred).toString().padStart(2, "0")}`; };
+
 export default function D() {
   const { user, branches, scope, setScope, setAiOpen } = useAuth();
   const [summary, setSummary] = useState<any>(null), [trend, setTrend] = useState<any>(null), [best, setBest] = useState<any[]>([]), [peak, setPeak] = useState<any[]>([]), [comparison, setComparison] = useState<any[]>([]), [message, setMessage] = useState("");
   const [expenseReport, setExpenseReport] = useState<any>(null);
+  const [cashClose, setCashClose] = useState<any>(null), [openingFloat, setOpeningFloat] = useState(""), [countedCash, setCountedCash] = useState(""), [closeNote, setCloseNote] = useState(""), [closeError, setCloseError] = useState(""), [savingClose, setSavingClose] = useState(false);
+  const cashCloseBranch = branches[0]?.id;
   const branch = user?.role === "owner" ? scope === "all" ? "all" : branches.find((b: any) => b.code === scope)?.id : branches[0]?.id;
   const selected = user?.role === "owner" && scope === "all" ? sampleBranches : sampleBranches.filter(b => b.id === scope);
   const expenses = Number(summary?.expenses ?? 0) / 100, stock = selected.reduce((sum, b) => sum + b.stock, 0);
@@ -37,15 +42,31 @@ export default function D() {
     }).catch(e => setMessage(e.message));
   }, [branch, user?.role]);
 
+  useEffect(() => {
+    if (user?.role !== "manager" || !cashCloseBranch) return;
+    fetch(`${apiUrl()}/branches/${cashCloseBranch}/cash-closes/preview`, { credentials: "include" }).then(r => r.ok ? r.json() : Promise.reject()).then(setCashClose).catch(() => setCloseError("Could not load cash close preview."));
+  }, [cashCloseBranch, user?.role]);
+
   if (!user) return null;
   const money = (value: string | number) => peso(Number(value) / 100);
   const values = trend?.series?.map((value: any) => Number(value.sales) / 100) ?? [];
   const lowLabel = low[0] ? `${low[0].item} is low at ${bname(low[0].branch)}.` : "All stock levels are fine.";
+  const submitClose = async () => {
+    if (!cashCloseBranch || !cashClose) return;
+    setSavingClose(true); setCloseError("");
+    try {
+      const response = await fetch(`${apiUrl()}/branches/${cashCloseBranch}/cash-closes`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessDate: cashClose.businessDate, openingFloat: centavos(openingFloat), countedCash: centavos(countedCash), note: closeNote || undefined }) });
+      const data = await response.json();
+      if (response.status === 409) { const preview = await fetch(`${apiUrl()}/branches/${cashCloseBranch}/cash-closes/preview`, { credentials: "include" }); if (preview.ok) setCashClose(await preview.json()); }
+      if (!response.ok) throw new Error(data.message || "Could not submit cash close.");
+      setCashClose({ ...cashClose, close: data });
+    } catch (error: any) { setCloseError(error.message); } finally { setSavingClose(false); }
+  };
   return <Page title={user.role === "owner" ? "Executive dashboard" : branches[0]?.name ?? "Branch dashboard"} sub="Sales figures from recorded sales." action={user.role === "owner" && <div className="flex gap-2"><button className="btn-p" onClick={() => setAiOpen(true)}>Ask AI about your data</button><button className="btn" onClick={() => setMessage("Report export is a placeholder.")}>Export report</button></div>}>
     {message && <p role="alert" className="card text-sm">{message}</p>}
     {user.role === "owner" && <select aria-label="Branch" className="btn" value={scope} onChange={e => setScope(e.target.value)}><option value="all">All branches</option>{branches.map((b: any) => <option key={b.id} value={b.code}>{b.name}</option>)}</select>}
     {summary && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4"><Stat dark l="Sales today" v={money(summary.today)} s="Business day"/><Stat l="Sales this week" v={money(summary.week)} s="Monday to today"/><Stat l="Sales this month" v={money(summary.mtd)} s="Month to date"/><Stat l="Growth · MTD" v={summary.growth === null ? "—" : `${Number(summary.growth).toFixed(1)}%`} s="vs same business days last month"/><Stat l="Customers" v={Number(summary.customers).toLocaleString()} s="Non-voided sales MTD"/><Stat l="Expenses · MTD" v={peso(expenses)} s={`Across ${selected.length} branch${selected.length > 1 ? "es" : ""}`}/><Stat l="Inventory value" v={peso(stock)} s="Current stock at cost"/><Stat l="Operating contribution" v={peso(Number(summary.operatingContribution) / 100)} s="MTD sales less expenses"/></div>}
-    {user.role !== "owner" && <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold text-lg">Today&apos;s target</h2><p className="text-sm text-black/50 mb-3">{summary && money(summary.today)} of {summary && money(summary.dailyTarget)}</p><Bar pct={summary?.targetProgress ?? 0}/><p className="text-sm mt-2">{summary?.targetProgress == null ? "Not set" : `${Math.round(summary.targetProgress)}% reached`}</p></div><div className="card"><h2 className="font-semibold text-lg">End-of-day cash check</h2><p className="text-sm text-black/50">Review the expected cash and count the drawer before closing.</p><Link className="btn-p inline-block mt-3" href="/expenses">Review branch close</Link></div></div>}
+    {user.role !== "owner" && <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold text-lg">Today&apos;s target</h2><p className="text-sm text-black/50 mb-3">{summary && money(summary.today)} of {summary && money(summary.dailyTarget)}</p><Bar pct={summary?.targetProgress ?? 0}/><p className="text-sm mt-2">{summary?.targetProgress == null ? "Not set" : `${Math.round(summary.targetProgress)}% reached`}</p></div>{user.role === "manager" && <div className="card"><h2 className="font-semibold text-lg">End-of-day cash close</h2>{cashClose?.close ? <><p className="text-sm text-black/50">Closed for {cashClose.businessDate}. Expected cash {centavoPeso(cashClose.close.expectedCash)}; counted {centavoPeso(cashClose.close.countedCash)}.</p><p className="text-sm mt-2">Cash variance {centavoPeso(cashClose.close.variance)}</p></> : <><p className="text-sm text-black/50">{cashClose ? `Business day ${cashClose.businessDate} · cash sales ${centavoPeso(cashClose.cashSales)}` : "Loading cash sales preview…"}</p><label className="block text-sm mt-3">Opening float<input className="btn mt-1 w-full" inputMode="decimal" value={openingFloat} onChange={e => setOpeningFloat(e.target.value)}/></label><label className="block text-sm mt-2">Counted cash<input className="btn mt-1 w-full" inputMode="decimal" value={countedCash} onChange={e => setCountedCash(e.target.value)}/></label><label className="block text-sm mt-2">Note (optional)<input className="btn mt-1 w-full" value={closeNote} onChange={e => setCloseNote(e.target.value)}/></label><button className="btn-p mt-3" disabled={!cashClose || !openingFloat || !countedCash || savingClose} onClick={submitClose}>{savingClose ? "Submitting…" : "Submit cash close"}</button></>}{closeError && <p role="alert" className="text-sm text-red-700 mt-2">{closeError}</p>}</div>}</div>}
     {user.role === "owner" && <div className="card"><h2 className="font-semibold mb-2">Branch comparison</h2><table className="w-full"><thead><tr><th>Branch</th><th>Today</th><th>This week</th><th>MTD</th><th>Growth</th><th>Share</th></tr></thead><tbody>{comparison.map(b => <tr key={b.id}><td>{b.name}</td><td>{money(b.today)}</td><td>{money(b.week)}</td><td>{money(b.mtd)}</td><td>{b.growth === null ? "—" : `${Number(b.growth).toFixed(1)}%`}</td><td><Bar pct={Number(b.share)} c="bg-sage"/></td></tr>)}</tbody></table></div>}
     <div className="card"><h2 className="font-semibold">Sales trend</h2><p className="text-sm text-black/50">Daily sales; forecast average {trend ? money(trend.forecast.dailyAverage) : "—"} ± 8%</p>{values.length > 1 && <Line a={values}/>}</div>
     <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold mb-2">Best sellers · this month</h2><table className="w-full"><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Margin</th></tr></thead><tbody>{best.slice(0, 5).map(p => <tr key={p.productId}><td>{p.name}</td><td>{p.units}</td><td>{money(p.revenue)}</td><td>{p.margin}%</td></tr>)}</tbody></table></div><div className="card"><h2 className="font-semibold">Peak hours</h2>{peak.length ? peak.map(p => <p key={p.local_hour} className="flex justify-between py-1"><span>{String(p.local_hour).padStart(2, "0")}:00</span><span>{p.customers} sales · {money(p.sales)}</span></p>) : <p className="text-sm text-black/50">No sales today yet.</p>}<Link href="/sales" className="text-brand underline">Open sales</Link></div></div>

@@ -6,7 +6,7 @@ import { DB_POOL } from './db/db.module';
 import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
-import { businessDate } from './sales.controller';
+import { businessDate } from './business-date';
 
 export class BranchQuery {
   @IsString() @IsNotEmpty() branch!: string;

@@ -80,3 +80,11 @@ export const saleLines = pgTable('sale_lines', {
   productId: uuid('product_id').notNull().references(() => products.id), productName: text('product_name').notNull(),
   unitPrice: bigint('unit_price', { mode: 'bigint' }).notNull(), unitCost: bigint('unit_cost', { mode: 'bigint' }).notNull(), qty: integer('qty').notNull(),
 }, t => [check('sale_lines_qty_positive', sql`${t.qty} > 0`), check('sale_lines_unit_price_nonnegative', sql`${t.unitPrice} >= 0`), check('sale_lines_unit_cost_nonnegative', sql`${t.unitCost} >= 0`)]);
+export const cashCloses = pgTable('cash_closes', {
+  id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  businessDate: date('business_date').notNull(), openingFloat: bigint('opening_float', { mode: 'bigint' }).notNull(),
+  cashSales: bigint('cash_sales', { mode: 'bigint' }).notNull(), expectedCash: bigint('expected_cash', { mode: 'bigint' }).notNull(),
+  countedCash: bigint('counted_cash', { mode: 'bigint' }).notNull(), variance: bigint('variance', { mode: 'bigint' }).notNull(),
+  note: text('note'), submittedBy: uuid('submitted_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique('cash_closes_branch_business_date_unique').on(t.branchId, t.businessDate)]);
