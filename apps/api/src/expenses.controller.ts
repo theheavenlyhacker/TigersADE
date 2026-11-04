@@ -7,14 +7,8 @@ import { logActivity } from './db/activity';
 import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
 import { CLOCK, Clock } from './clock';
-import { businessDate } from './business-date';
+import { businessDate, date, uuid } from './business-date';
 
-const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-const date = (v: unknown): v is string => {
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
-  const parsed = new Date(`${v}T00:00:00Z`);
-  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === v;
-};
 const amount = (v: unknown): string | null => {
   if (typeof v === 'number' && Number.isSafeInteger(v) && v > 0) return String(v);
   if (typeof v === 'string' && /^[1-9]\d*$/.test(v) && BigInt(v) <= 9223372036854775807n) return v;

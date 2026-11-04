@@ -56,6 +56,69 @@ describe('API foundation (Postgres)', () => {
     }
   });
 
+  it('lets only the owner manage users, resets passwords, and ends every session on deactivation', async () => {
+    const app = await createTestApp('test', new Date());
+    const db = app.get<Db>(DB);
+    const email = `issue14-${randomUUID()}@tigerscafe.ph`;
+    const suffix = randomUUID();
+    const staffName = `Issue 14 Roster ${suffix}`;
+    const updatedStaffName = `Updated Roster ${suffix}`;
+    const staffIds: string[] = [];
+    try {
+      const login = async (address: string, password = process.env.DEV_PASSWORD ?? 'tigers123') => {
+        const r = await request(app.getHttpServer()).post('/auth/login').send({ email: address, password });
+        return r;
+      };
+      const owner = await login('roy@tigerscafe.ph');
+      const ownerCookie = owner.headers['set-cookie'][0].split(';')[0];
+      const branch = await db.execute(sql`select id from branches where code='main'`);
+      const mainId = branch.rows[0].id as string;
+      await request(app.getHttpServer()).post('/users').set('Cookie', ownerCookie).send({ email: `bad-branch-${suffix}@tigerscafe.ph`, name: 'Invalid branch', password: 'initial-pass-14', role: 'cashier', branchIds: [randomUUID()] }).expect(422);
+      const created = await request(app.getHttpServer()).post('/users').set('Cookie', ownerCookie).send({ email, name: 'Issue 14 User', password: 'initial-pass-14', role: 'cashier', branchIds: [mainId] }).expect(201);
+      const manager = await login('main@tigerscafe.ph');
+      const managerCookie = manager.headers['set-cookie'][0].split(';')[0];
+      await request(app.getHttpServer()).get('/users').set('Cookie', managerCookie).expect(403);
+      await request(app.getHttpServer()).get('/branches/not-a-uuid/staff-members').set('Cookie', ownerCookie).expect(422);
+      await request(app.getHttpServer()).post('/branches/not-a-uuid/staff-members').set('Cookie', ownerCookie).send({ name: staffName, position: 'Barista', shiftStart: '06:00', shiftEnd: '14:00' }).expect(422);
+      await request(app.getHttpServer()).post(`/branches/${randomUUID()}/staff-members`).set('Cookie', ownerCookie).send({ name: staffName, position: 'Barista', shiftStart: '06:00', shiftEnd: '14:00' }).expect(422);
+      const staff = await request(app.getHttpServer()).post(`/branches/${mainId}/staff-members`).set('Cookie', managerCookie).send({ name: staffName, position: 'Barista', shiftStart: '06:00', shiftEnd: '14:00' }).expect(201);
+      staffIds.push(staff.body.id);
+      await request(app.getHttpServer()).post(`/branches/${mainId}/staff-members`).set('Cookie', managerCookie).send({ name: staffName, position: 'Barista', shiftStart: '06:00', shiftEnd: '14:00' }).expect(409);
+      const otherStaffName = `Other Roster ${suffix}`;
+      const otherStaff = await request(app.getHttpServer()).post(`/branches/${mainId}/staff-members`).set('Cookie', managerCookie).send({ name: otherStaffName, position: 'Barista', shiftStart: '06:00', shiftEnd: '14:00' }).expect(201);
+      staffIds.push(otherStaff.body.id);
+      const otherBranch = await db.execute(sql`select id from branches where code='annex'`);
+      await request(app.getHttpServer()).patch(`/branches/${otherBranch.rows[0].id}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ active: false }).expect(403);
+      await request(app.getHttpServer()).patch(`/branches/not-a-uuid/staff-members/${staff.body.id}`).set('Cookie', ownerCookie).send({ active: false }).expect(422);
+      await request(app.getHttpServer()).patch(`/branches/${mainId}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ name: updatedStaffName, position: 'Cashier', shiftStart: '07:00', shiftEnd: '15:00' }).expect(200);
+      await request(app.getHttpServer()).patch(`/branches/${mainId}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ name: otherStaffName, position: 'Cashier', shiftStart: '07:00', shiftEnd: '15:00' }).expect(409);
+      await request(app.getHttpServer()).patch(`/users/${created.body.id}`).set('Cookie', ownerCookie).send({ role: 'cashier', branchIds: [mainId], staffMemberId: staff.body.id }).expect(200);
+      await request(app.getHttpServer()).patch(`/users/${created.body.id}`).set('Cookie', ownerCookie).send({ role: 'manager', branchIds: [mainId] }).expect(200);
+      const linkedUser = await db.execute(sql`select staff_member_id from users where id=${created.body.id}`);
+      expect(linkedUser.rows[0].staff_member_id).toBe(staff.body.id);
+      await request(app.getHttpServer()).patch(`/branches/${mainId}/staff-members/${staff.body.id}`).set('Cookie', managerCookie).send({ active: false }).expect(200);
+      const oldLogin = await login(email, 'initial-pass-14');
+      expect(oldLogin.status).toBe(201);
+      await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', managerCookie).send({ password: 'reset-pass-14' }).expect(403);
+      await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', ownerCookie).send({ password: 'reset-pass-14' }).expect(201);
+      expect((await login(email, 'initial-pass-14')).status).toBe(401);
+      const loggedIn = await login(email, 'reset-pass-14');
+      expect(loggedIn.status).toBe(201);
+      const userCookie = loggedIn.headers['set-cookie'][0].split(';')[0];
+      await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(200);
+      await request(app.getHttpServer()).post(`/users/${created.body.id}/deactivate`).set('Cookie', ownerCookie).send({}).expect(201);
+      await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(401);
+      const sessions = await db.execute(sql`select count(*)::int as count from sessions where user_id=${created.body.id}`);
+      expect(sessions.rows[0].count).toBe(0);
+      const activity = await db.execute(sql`select action from activity_log where payload->>'userId'=${created.body.id}`);
+      expect(activity.rows.map(r => r.action)).toEqual(expect.arrayContaining(['user.created','user.deactivated']));
+    } finally {
+      await db.execute(sql`delete from users where email=${email}`);
+      for (const staffId of staffIds) await db.execute(sql`delete from staff_members where id=${staffId}`);
+      await app.close();
+    }
+  });
+
   it('limits a branch manager to their assigned branch on the API', async () => {
     const app = await createTestApp('test', new Date());
     try {
