@@ -22,6 +22,19 @@ async function main() {
       await pool.query('delete from user_branches where user_id = $1', [result.rows[0].id]);
       if (branch) await pool.query('insert into user_branches (user_id, branch_id) select $1, id from branches where code = $2', [result.rows[0].id, branch]);
     }
+    const categories = ['Coffee', 'Food', 'Pastry', 'Tea'];
+    for (const category of categories) await pool.query('insert into product_categories (name) values ($1) on conflict (name) do nothing', [category]);
+    const products = [
+      ['Flat white', 'Coffee', 140, 74], ['Oat latte', 'Coffee', 165, 68], ['Avocado toast', 'Food', 240, 62],
+      ['Cappuccino', 'Coffee', 135, 71], ['Butter croissant', 'Pastry', 110, 64], ['Iced matcha', 'Tea', 170, 66],
+    ] as const;
+    for (const [product, category, price, margin] of products) {
+      await pool.query(`insert into products (category_id, name, price, unit_cost) select id, $1, $2, $3 from product_categories where name = $4
+        on conflict (category_id, name) do nothing`, [product, price * 100, Math.round(price * (100 - margin)), category]);
+    }
+    for (const category of ['ingredients and supplies', 'payroll', 'rent', 'utilities', 'other']) {
+      await pool.query('insert into expense_categories (name) values ($1) on conflict (name) do nothing', [category]);
+    }
   } finally { await pool.end(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
