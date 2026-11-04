@@ -20,9 +20,20 @@ export default function D() {
     if (!branch) return;
     const get = async (path: string) => { const response = await fetch(`${apiUrl()}/reports/${path}`, { credentials: "include" }); if (!response.ok) throw new Error("Dashboard reports could not be loaded."); return response.json(); };
     get(`summary?branch=${branch}`).then(async s => {
-      const date = s.date;
-      const [t, b, p, c, expenses] = await Promise.all([get(`trend?branch=${branch}`), get(`best-sellers?branch=${branch}&from=${date.slice(0, 7)}-01&to=${date}`), get(`peak-hours?branch=${branch}&from=${date}&to=${date}`), user?.role === "owner" ? get("comparison") : Promise.resolve([]), get(`expenses?branch=${branch}&month=${date.slice(0, 7)}`)]);
-      setSummary(s); setTrend(t); setBest(b); setPeak(p); setComparison(c); setExpenseReport(expenses); setMessage("");
+      const periods = s.branches.length ? s.branches : [{ branchId: branch, date: s.date }];
+      const [t, bestByBranch, peakByBranch, c, expenses] = await Promise.all([get(`trend?branch=${branch}`), Promise.all(periods.map((b: any) => get(`best-sellers?branch=${b.branchId}&from=${b.date.slice(0, 7)}-01&to=${b.date}`))), Promise.all(periods.map((b: any) => get(`peak-hours?branch=${b.branchId}&from=${b.date}&to=${b.date}`))), user?.role === "owner" ? get("comparison") : Promise.resolve([]), get(`expenses?branch=${branch}&month=${s.date.slice(0, 7)}`)]);
+      const bestProducts = new Map<string, any>();
+      for (const product of bestByBranch.flat()) {
+        const current = bestProducts.get(product.productId) ?? { ...product, units: 0, revenue: BigInt(0), marginValue: 0 };
+        current.units += Number(product.units); current.revenue += BigInt(product.revenue); current.marginValue += Number(product.revenue) * Number(product.margin) / 100;
+        bestProducts.set(product.productId, current);
+      }
+      const peakHours = new Map<number, any>();
+      for (const hour of peakByBranch.flat()) {
+        const current = peakHours.get(hour.local_hour) ?? { ...hour, customers: 0, sales: BigInt(0) };
+        current.customers += Number(hour.customers); current.sales += BigInt(hour.sales); peakHours.set(hour.local_hour, current);
+      }
+      setSummary(s); setTrend(t); setBest([...bestProducts.values()].map(p => ({ ...p, revenue: p.revenue.toString(), margin: p.revenue ? (p.marginValue / Number(p.revenue) * 100).toFixed(2) : "0" }))); setPeak([...peakHours.values()].map(p => ({ ...p, sales: p.sales.toString() }))); setComparison(c); setExpenseReport(expenses); setMessage("");
     }).catch(e => setMessage(e.message));
   }, [branch, user?.role]);
 
