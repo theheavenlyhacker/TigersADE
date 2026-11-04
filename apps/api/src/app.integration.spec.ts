@@ -175,6 +175,34 @@ describe('API foundation (Postgres)', () => {
     } finally { await app.close(); }
   });
 
+  it('reports real sales, excludes voided sales, scopes branches, and restricts comparison to the owner', async () => {
+    const app = await createTestApp('test', new Date('2026-11-04T10:00:00Z'));
+    try {
+      const db = app.get<Db>(DB);
+      const branch = await db.execute(sql`select id from branches where code = 'main'`);
+      const branchId = branch.rows[0].id as string;
+      const product = await db.execute(sql`select id, price::text from products where active limit 1`);
+      const login = async (email: string) => { const r = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201); return r.headers['set-cookie'][0].split(';')[0]; };
+      const owner = await login('roy@tigerscafe.ph'); const manager = await login('main@tigerscafe.ph'); const cashier = await login('cashier@tigerscafe.ph');
+      const query = `/reports/summary?branch=${branchId}&date=2026-11-04`;
+      const before = await request(app.getHttpServer()).get(query).set('Cookie', manager).expect(200);
+      const sale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 2 }] }).expect(201);
+      const after = await request(app.getHttpServer()).get(query).set('Cookie', manager).expect(200);
+      expect(Number(after.body.today) - Number(before.body.today)).toBe(Number(product.rows[0].price) * 2);
+      expect(Number(after.body.customers) - Number(before.body.customers)).toBe(1);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${sale.body.id}/void`).set('Cookie', cashier).send({ reason: 'test void' }).expect(201);
+      const voided = await request(app.getHttpServer()).get(query).set('Cookie', manager).expect(200);
+      expect(voided.body.today).toBe(before.body.today); expect(voided.body.customers).toBe(before.body.customers);
+      await request(app.getHttpServer()).get('/reports/comparison').set('Cookie', manager).expect(403);
+      await request(app.getHttpServer()).get(`/reports/summary?branch=all&date=2026-11-04`).set('Cookie', manager).expect(403);
+      await request(app.getHttpServer()).get('/reports/comparison').set('Cookie', owner).expect(200);
+      const best = await request(app.getHttpServer()).get(`/reports/best-sellers?branch=${branchId}&from=2026-11-04&to=2026-11-04`).set('Cookie', owner).expect(200);
+      expect(best.body).not.toEqual(expect.arrayContaining([expect.objectContaining({ productId: product.rows[0].id })]));
+      await request(app.getHttpServer()).get(`/reports/trend?branch=${branchId}&granularity=daily&date=2026-11-04`).set('Cookie', manager).expect(200);
+      await request(app.getHttpServer()).get(`/reports/peak-hours?branch=${branchId}&date=2026-11-04`).set('Cookie', manager).expect(200);
+    } finally { await app.close(); }
+  });
+
   it('records idempotent sales with catalog snapshots, cutoff business days, and gapless concurrent numbers', async () => {
     const fixedNow = new Date('2026-11-03T19:59:00Z'); // 03:59 Manila
     const app = await createTestApp('test', fixedNow);
