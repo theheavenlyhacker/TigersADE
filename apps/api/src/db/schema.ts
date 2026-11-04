@@ -1,4 +1,4 @@
-import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, date } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uuid, bigserial, unique, uniqueIndex, date } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const branches = pgTable('branches', {
@@ -30,6 +30,11 @@ export const expenseCategories = pgTable('expense_categories', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+export const staffMembers = pgTable('staff_members', {
+  id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  name: text('name').notNull(), position: text('position').notNull(), shiftStart: time('shift_start').notNull(), shiftEnd: time('shift_end').notNull(),
+  active: boolean('active').notNull().default(true), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [uniqueIndex('staff_members_branch_name_unique').on(t.branchId, t.name).where(sql`${t.active}`)]);
 export const expenses = pgTable('expenses', {
   id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
   categoryId: uuid('category_id').notNull().references(() => expenseCategories.id), businessDate: date('business_date').notNull(),
@@ -40,6 +45,7 @@ export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull(), passwordHash: text('password_hash').notNull(), name: text('name').notNull(),
   role: text('role', { enum: ['owner', 'manager', 'cashier'] }).notNull(), active: boolean('active').notNull().default(true),
+  staffMemberId: uuid('staff_member_id').references(() => staffMembers.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 export const userBranches = pgTable('user_branches', {

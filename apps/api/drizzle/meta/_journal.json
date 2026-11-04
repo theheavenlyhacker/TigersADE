@@ -71,6 +71,13 @@
       "when": 1793805094281,
       "tag": "0009_spotty_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793807545993,
+      "tag": "0010_jazzy_caretaker",
+      "breakpoints": true
     }
   ]
 }

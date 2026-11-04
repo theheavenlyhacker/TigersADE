@@ -8,6 +8,7 @@ import { CatalogController } from '../catalog.controller';
 import { SalesController } from '../sales.controller';
 import { ExpensesController, ExpenseReportsController } from '../expenses.controller';
 import { CLOCK, SystemClock } from '../clock';
+import { StaffController } from './staff.controller';
 
-@Module({ controllers: [AuthController, BranchesController, ActivityController, CatalogController, SalesController, ExpensesController, ExpenseReportsController], providers: [AuthService, AccessGuard, { provide: CLOCK, useClass: SystemClock }], exports: [AccessGuard] })
+@Module({ controllers: [AuthController, BranchesController, ActivityController, CatalogController, SalesController, StaffController, ExpensesController, ExpenseReportsController], providers: [AuthService, AccessGuard, { provide: CLOCK, useClass: SystemClock }], exports: [AccessGuard] })
 export class AuthModule {}
