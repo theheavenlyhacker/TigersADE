@@ -1,38 +1,76 @@
 "use client";
-import Link from "next/link";import {useEffect,useState} from "react";import {useAuth} from "@/components/Auth";
-import {Page,Stat,Bar,Line} from "@/components/ui";import {peso,series,branches as sampleBranches,inventory,products,bname,expenseCats} from "@/lib/data";
-import {apiUrl} from "@/lib/catalog";
-const centavos=(value:string)=>{const parts=/^(\d{1,16})(?:\.(\d{1,2}))?$/.exec(value);if(!parts)throw new Error("Enter a non-negative amount with up to two decimal places.");return(BigInt(parts[1])*BigInt(100)+BigInt((parts[2]??"").padEnd(2,"0"))).toString()};
-const centavoPeso=(value:string)=>{const amount=BigInt(value),hundred=BigInt(100),absolute=amount<BigInt(0)?-amount:amount;return`${amount<BigInt(0)?"-":""}₱${(absolute/hundred).toLocaleString("en-PH")}.${(absolute%hundred).toString().padStart(2,"0")}`};
-export default function D(){
-const {user,list,branches:apiBranches,scope,setScope,setAiOpen}=useAuth();const [msg,setMsg]=useState("");const [expenseSummary,setExpenseSummary]=useState<any>(null);const [cashClose,setCashClose]=useState<any>(null);const [openingFloat,setOpeningFloat]=useState("");const [countedCash,setCountedCash]=useState("");const [closeNote,setCloseNote]=useState("");const [closeError,setCloseError]=useState("");const [savingClose,setSavingClose]=useState(false);
-const api=apiUrl();const branch=apiBranches.find((b:any)=>b.code===scope)||apiBranches[0];
-useEffect(()=>{if(!user)return;const branchId=scope==="all"?"all":apiBranches.find((b:any)=>b.code===scope)?.id;if(!branchId)return;const month=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit"}).format(new Date());Promise.all([fetch(`${api}/reports/summary?branch=${branchId}`,{credentials:"include"}),fetch(`${api}/reports/expenses?branch=${branchId}&month=${month}`,{credentials:"include"})]).then(async([a,b])=>{if(!a.ok||!b.ok)throw new Error();setExpenseSummary({summary:await a.json(),report:await b.json()})}).catch(()=>setExpenseSummary(null))},[api,user,apiBranches,scope]);
-useEffect(()=>{if(user?.role!=="manager"||!branch)return;fetch(`${api}/branches/${branch.id}/cash-closes/preview`,{credentials:"include"}).then(r=>r.ok?r.json():Promise.reject()).then(setCashClose).catch(()=>setCloseError("Could not load cash close preview."))},[api,branch?.id,user?.role]);
-if(!user)return null;const owner=user.role==="owner";
-const submitClose=async()=>{if(!branch||!cashClose)return;setSavingClose(true);setCloseError("");try{const r=await fetch(`${api}/branches/${branch.id}/cash-closes`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({businessDate:cashClose.businessDate,openingFloat:centavos(openingFloat),countedCash:centavos(countedCash),note:closeNote||undefined})});const data=await r.json();if(r.status===409){const preview=await fetch(`${api}/branches/${branch.id}/cash-closes/preview`,{credentials:"include"});if(preview.ok)setCashClose(await preview.json())}if(!r.ok)throw new Error(data.message||"Could not submit cash close.");setCashClose({...cashClose,close:data});}catch(e:any){setCloseError(e.message)}finally{setSavingClose(false)}};
-const sum=(k:"today"|"week"|"mtd"|"customers"|"expenses"|"stock")=>list.reduce((a:number,b:any)=>a+b[k],0);
-const mtd=sum("mtd");const g=list.reduce((a:number,b:any)=>a+b.growth*b.mtd,0)/mtd;
-const low=inventory.filter(i=>i.qty<i.par&&(scope==="all"||i.branch===scope));
-const reportExpenses=Number(expenseSummary?.report.expenses??0);
-const ranked=[...sampleBranches].sort((a,b)=>b.mtd-a.mtd);const tot=sampleBranches.reduce((a,b)=>a+b.mtd,0);
-const b0=list[0];
-return <Page title={owner?"Executive dashboard":list[0]?.name??"Branch dashboard"} sub={owner?"A clear view of your café business. Three branches, one connected picture.":"Your branch today: sales, targets and what needs doing."}
-action={owner&&<div className="flex gap-2"><button className="btn-p" onClick={()=>setAiOpen(true)}>Ask AI about your data</button><button className="btn" onClick={()=>setMsg("Report export is a placeholder.")}>Export report</button></div>}>
-{msg&&<div className="card text-sm bg-mint">{msg}</div>}
-{owner&&<select className="btn" value={scope} onChange={e=>setScope(e.target.value)}><option value="all">All branches</option>{apiBranches.map((b:any)=><option key={b.code} value={b.code}>{b.name}</option>)}</select>}
-<div className="bg-mint rounded-xl px-5 py-3 flex justify-between"><span>{owner?`Your business is growing. Revenue is up ${g.toFixed(1)}% vs the prior month's same period.`:`Your branch is up ${g.toFixed(1)}% vs the prior month's same period.`}</span>{owner&&<span>3 of 3 branches growing</span>}</div>
-<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-<Stat dark l="Total sales today" v={peso(sum("today"))} s="Oct 18, 2026"/><Stat l="Sales this week" v={peso(sum("week"))} s="Oct 12–18"/><Stat l="Sales this month" v={peso(Number(expenseSummary?.summary.sales??mtd*100)/100)} s="Month to date"/><Stat l="Revenue growth · MTD" v={"+"+g.toFixed(1)+"%"} s="vs prior period"/>
-<Stat l="Customer count" v={sum("customers").toLocaleString()} s="MTD transactions"/><Stat l="Expenses · MTD" v={peso(Number(expenseSummary?.summary.expenses??0)/100)} s={`Across ${expenseSummary?.summary.branches.length??0} branch${expenseSummary?.summary.branches.length===1?"":"es"}`}/><Stat l="Inventory value" v={peso(sum("stock"))} s="Current stock at cost"/><Stat l="Operating contribution" v={peso(Number(expenseSummary?.summary.operatingContribution??0)/100)} s="MTD sales less expenses"/></div>
-{!owner&&b0&&<div className="grid md:grid-cols-2 gap-5"><div className="card"><h3 className="font-semibold text-lg">Today's target</h3><p className="text-sm text-black/50 mb-3">{peso(b0.today)} of {peso(b0.target)}</p><Bar pct={b0.today/b0.target*100}/><p className="text-sm mt-2">{Math.round(b0.today/b0.target*100)}% reached</p></div>
-{user.role==="manager"&&<div className="card"><h3 className="font-semibold text-lg">End-of-day cash close</h3>{cashClose?.close?<><p className="text-sm text-black/50">Closed for {cashClose.businessDate}. Expected cash {centavoPeso(cashClose.close.expectedCash)}; counted {centavoPeso(cashClose.close.countedCash)}.</p><p className="text-sm mt-2">Cash variance {centavoPeso(cashClose.close.variance)}</p></>:<><p className="text-sm text-black/50">{cashClose?`Business day ${cashClose.businessDate} · cash sales ${centavoPeso(cashClose.cashSales)}`:"Loading cash sales preview…"}</p><label className="block text-sm mt-3">Opening float<input className="btn mt-1 w-full" inputMode="decimal" value={openingFloat} onChange={e=>setOpeningFloat(e.target.value)}/></label><label className="block text-sm mt-2">Counted cash<input className="btn mt-1 w-full" inputMode="decimal" value={countedCash} onChange={e=>setCountedCash(e.target.value)}/></label><label className="block text-sm mt-2">Note (optional)<input className="btn mt-1 w-full" value={closeNote} onChange={e=>setCloseNote(e.target.value)}/></label><button className="btn-p mt-3" disabled={!cashClose||!openingFloat||!countedCash||savingClose} onClick={submitClose}>{savingClose?"Submitting…":"Submit cash close"}</button></>}{closeError&&<p role="alert" className="text-sm text-red-700 mt-2">{closeError}</p>}</div>}</div>}
-<div className="card"><h3 className="font-semibold text-lg">Revenue overview</h3><p className="text-sm text-black/50 mb-2">Cumulative, month to date · solid is October, dashed is September</p><Line a={series(mtd)} b={series(mtd/(1+g/100))}/></div>
-{owner&&<div className="card"><h3 className="font-semibold text-lg mb-2">Branch performance comparison</h3><table className="w-full"><thead><tr><th>Branch</th><th>Today</th><th>This week</th><th>MTD</th><th>Growth</th><th>Share</th></tr></thead><tbody>{ranked.map((b,i)=><tr key={b.id}><td>#{i+1} {b.name}</td><td>{peso(b.today)}</td><td>{peso(b.week)}</td><td>{peso(b.mtd)}</td><td className="text-sage">+{b.growth}%</td><td className="w-32"><Bar pct={b.mtd/tot*100} c="bg-sage"/></td></tr>)}</tbody></table></div>}
-<div className="grid md:grid-cols-2 gap-5"><div className="card"><h3 className="font-semibold text-lg mb-2">Best-selling products</h3><table className="w-full"><thead><tr><th>Product</th><th>Units</th><th>Price</th><th>Margin</th></tr></thead><tbody>{products.slice(0,5).map(p=><tr key={p.name}><td>{p.name}</td><td>{p.units.toLocaleString()}</td><td>{peso(p.price)}</td><td>{p.margin}%</td></tr>)}</tbody></table></div>
-<div className="card"><h3 className="font-semibold text-lg">Expense tracking</h3><div className="text-3xl font-semibold my-2">{peso(reportExpenses/100)}</div>{(expenseSummary?.report.categories??expenseCats.map(c=>({categoryId:c.n,categoryName:c.n,total:"0"}))).map((c:any)=><div key={c.categoryId} className="flex justify-between py-1.5 text-sm"><span>{c.categoryName}</span><span>{peso(Number(c.total)/100)} <span className="text-black/40">{reportExpenses?`${(Number(c.total)/reportExpenses*100).toFixed(1)}%`:"0%"}</span></span></div>)}</div></div>
-<h2 className="text-xl font-semibold pt-2">Your attention, where it matters</h2>
-<div className="grid md:grid-cols-3 gap-4"><div className="card"><b>{low.length} stock items need attention</b><p className="text-sm text-black/55 my-2">{low[0]?`${low[0].item} is low at ${bname(low[0].branch)}.`:"All stock levels are fine."}</p><Link href="/inventory" className="text-brand underline">Review inventory</Link></div>
-<div className="card"><b>{owner?`${ranked[0].name} is setting the pace`:"Plan for the lunch rush"}</b><p className="text-sm text-black/55 my-2">{owner?`${peso(ranked[0].mtd)} in MTD sales and ${ranked[0].growth}% growth.`:"Peak hours are 12–2pm. Keep bar and kitchen coverage aligned."}</p><Link href="/sales" className="text-brand underline">Open sales</Link></div>
-<div className="card"><b>Review recent activity</b><p className="text-sm text-black/55 my-2">Voids, price changes and stock adjustments are logged.</p><Link href="/staff" className="text-brand underline">View activity</Link></div></div>
-</Page>}
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@/components/Auth";
+import { Page, Stat, Bar, Line } from "@/components/ui";
+import { peso, branches as sampleBranches, inventory, products, bname, expenseCats } from "@/lib/data";
+import { apiUrl } from "@/lib/catalog";
+
+const centavos = (value: string) => { const parts = /^(\d{1,16})(?:\.(\d{1,2}))?$/.exec(value); if (!parts) throw new Error("Enter a non-negative amount with up to two decimal places."); return (BigInt(parts[1]) * BigInt(100) + BigInt((parts[2] ?? "").padEnd(2, "0"))).toString(); };
+const centavoPeso = (value: string) => { const amount = BigInt(value), hundred = BigInt(100), absolute = amount < BigInt(0) ? -amount : amount; return `${amount < BigInt(0) ? "-" : ""}₱${(absolute / hundred).toLocaleString("en-PH")}.${(absolute % hundred).toString().padStart(2, "0")}`; };
+
+export default function D() {
+  const { user, branches, scope, setScope, setAiOpen } = useAuth();
+  const [summary, setSummary] = useState<any>(null), [trend, setTrend] = useState<any>(null), [best, setBest] = useState<any[]>([]), [peak, setPeak] = useState<any[]>([]), [comparison, setComparison] = useState<any[]>([]), [message, setMessage] = useState("");
+  const [expenseReport, setExpenseReport] = useState<any>(null);
+  const [cashClose, setCashClose] = useState<any>(null), [openingFloat, setOpeningFloat] = useState(""), [countedCash, setCountedCash] = useState(""), [closeNote, setCloseNote] = useState(""), [closeError, setCloseError] = useState(""), [savingClose, setSavingClose] = useState(false);
+  const cashCloseBranch = branches[0]?.id;
+  const branch = user?.role === "owner" ? scope === "all" ? "all" : branches.find((b: any) => b.code === scope)?.id : branches[0]?.id;
+  const selected = user?.role === "owner" && scope === "all" ? sampleBranches : sampleBranches.filter(b => b.id === scope);
+  const expenses = Number(summary?.expenses ?? 0) / 100, stock = selected.reduce((sum, b) => sum + b.stock, 0);
+  const low = inventory.filter(i => i.qty < i.par && (scope === "all" || i.branch === scope));
+  const peakHour = peak.reduce<any>((busiest, hour) => !busiest || Number(hour.sales) > Number(busiest.sales) ? hour : busiest, null);
+
+  useEffect(() => {
+    if (!branch) return;
+    const get = async (path: string) => { const response = await fetch(`${apiUrl()}/reports/${path}`, { credentials: "include" }); if (!response.ok) throw new Error("Dashboard reports could not be loaded."); return response.json(); };
+    get(`summary?branch=${branch}`).then(async s => {
+      const periods = s.branches.length ? s.branches : [{ branchId: branch, date: s.date }];
+      const [t, bestByBranch, peakByBranch, c, expenses] = await Promise.all([get(`trend?branch=${branch}`), Promise.all(periods.map((b: any) => get(`best-sellers?branch=${b.branchId}&from=${b.date.slice(0, 7)}-01&to=${b.date}`))), Promise.all(periods.map((b: any) => get(`peak-hours?branch=${b.branchId}&from=${b.date}&to=${b.date}`))), user?.role === "owner" ? get("comparison") : Promise.resolve([]), get(`expenses?branch=${branch}&month=${s.date.slice(0, 7)}`)]);
+      const bestProducts = new Map<string, any>();
+      for (const product of bestByBranch.flat()) {
+        const current = bestProducts.get(product.productId) ?? { ...product, units: 0, revenue: BigInt(0), marginValue: 0 };
+        current.units += Number(product.units); current.revenue += BigInt(product.revenue); current.marginValue += Number(product.revenue) * Number(product.margin) / 100;
+        bestProducts.set(product.productId, current);
+      }
+      const peakHours = new Map<number, any>();
+      for (const hour of peakByBranch.flat()) {
+        const current = peakHours.get(hour.local_hour) ?? { ...hour, customers: 0, sales: BigInt(0) };
+        current.customers += Number(hour.customers); current.sales += BigInt(hour.sales); peakHours.set(hour.local_hour, current);
+      }
+      setSummary(s); setTrend(t); setBest([...bestProducts.values()].map(p => ({ ...p, revenue: p.revenue.toString(), margin: p.revenue ? (p.marginValue / Number(p.revenue) * 100).toFixed(2) : "0" }))); setPeak([...peakHours.values()].map(p => ({ ...p, sales: p.sales.toString() }))); setComparison(c); setExpenseReport(expenses); setMessage("");
+    }).catch(e => setMessage(e.message));
+  }, [branch, user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "manager" || !cashCloseBranch) return;
+    fetch(`${apiUrl()}/branches/${cashCloseBranch}/cash-closes/preview`, { credentials: "include" }).then(r => r.ok ? r.json() : Promise.reject()).then(setCashClose).catch(() => setCloseError("Could not load cash close preview."));
+  }, [cashCloseBranch, user?.role]);
+
+  if (!user) return null;
+  const money = (value: string | number) => peso(Number(value) / 100);
+  const values = trend?.series?.map((value: any) => Number(value.sales) / 100) ?? [];
+  const lowLabel = low[0] ? `${low[0].item} is low at ${bname(low[0].branch)}.` : "All stock levels are fine.";
+  const submitClose = async () => {
+    if (!cashCloseBranch || !cashClose) return;
+    setSavingClose(true); setCloseError("");
+    try {
+      const response = await fetch(`${apiUrl()}/branches/${cashCloseBranch}/cash-closes`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessDate: cashClose.businessDate, openingFloat: centavos(openingFloat), countedCash: centavos(countedCash), note: closeNote || undefined }) });
+      const data = await response.json();
+      if (response.status === 409) { const preview = await fetch(`${apiUrl()}/branches/${cashCloseBranch}/cash-closes/preview`, { credentials: "include" }); if (preview.ok) setCashClose(await preview.json()); }
+      if (!response.ok) throw new Error(data.message || "Could not submit cash close.");
+      setCashClose({ ...cashClose, close: data });
+    } catch (error: any) { setCloseError(error.message); } finally { setSavingClose(false); }
+  };
+  return <Page title={user.role === "owner" ? "Executive dashboard" : branches[0]?.name ?? "Branch dashboard"} sub="Sales figures from recorded sales." action={user.role === "owner" && <div className="flex gap-2"><button className="btn-p" onClick={() => setAiOpen(true)}>Ask AI about your data</button><button className="btn" onClick={() => setMessage("Report export is a placeholder.")}>Export report</button></div>}>
+    {message && <p role="alert" className="card text-sm">{message}</p>}
+    {user.role === "owner" && <select aria-label="Branch" className="btn" value={scope} onChange={e => setScope(e.target.value)}><option value="all">All branches</option>{branches.map((b: any) => <option key={b.id} value={b.code}>{b.name}</option>)}</select>}
+    {summary && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4"><Stat dark l="Sales today" v={money(summary.today)} s="Business day"/><Stat l="Sales this week" v={money(summary.week)} s="Monday to today"/><Stat l="Sales this month" v={money(summary.mtd)} s="Month to date"/><Stat l="Growth · MTD" v={summary.growth === null ? "—" : `${Number(summary.growth).toFixed(1)}%`} s="vs same business days last month"/><Stat l="Customers" v={Number(summary.customers).toLocaleString()} s="Non-voided sales MTD"/><Stat l="Expenses · MTD" v={peso(expenses)} s={`Across ${selected.length} branch${selected.length > 1 ? "es" : ""}`}/><Stat l="Inventory value" v={peso(stock)} s="Current stock at cost"/><Stat l="Operating contribution" v={peso(Number(summary.operatingContribution) / 100)} s="MTD sales less expenses"/></div>}
+    {user.role !== "owner" && <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold text-lg">Today&apos;s target</h2><p className="text-sm text-black/50 mb-3">{summary && money(summary.today)} of {summary && money(summary.dailyTarget)}</p><Bar pct={summary?.targetProgress ?? 0}/><p className="text-sm mt-2">{summary?.targetProgress == null ? "Not set" : `${Math.round(summary.targetProgress)}% reached`}</p></div>{user.role === "manager" && <div className="card"><h2 className="font-semibold text-lg">End-of-day cash close</h2>{cashClose?.close ? <><p className="text-sm text-black/50">Closed for {cashClose.businessDate}. Expected cash {centavoPeso(cashClose.close.expectedCash)}; counted {centavoPeso(cashClose.close.countedCash)}.</p><p className="text-sm mt-2">Cash variance {centavoPeso(cashClose.close.variance)}</p></> : <><p className="text-sm text-black/50">{cashClose ? `Business day ${cashClose.businessDate} · cash sales ${centavoPeso(cashClose.cashSales)}` : "Loading cash sales preview…"}</p><label className="block text-sm mt-3">Opening float<input className="btn mt-1 w-full" inputMode="decimal" value={openingFloat} onChange={e => setOpeningFloat(e.target.value)}/></label><label className="block text-sm mt-2">Counted cash<input className="btn mt-1 w-full" inputMode="decimal" value={countedCash} onChange={e => setCountedCash(e.target.value)}/></label><label className="block text-sm mt-2">Note (optional)<input className="btn mt-1 w-full" value={closeNote} onChange={e => setCloseNote(e.target.value)}/></label><button className="btn-p mt-3" disabled={!cashClose || !openingFloat || !countedCash || savingClose} onClick={submitClose}>{savingClose ? "Submitting…" : "Submit cash close"}</button></>}{closeError && <p role="alert" className="text-sm text-red-700 mt-2">{closeError}</p>}</div>}</div>}
+    {user.role === "owner" && <div className="card"><h2 className="font-semibold mb-2">Branch comparison</h2><table className="w-full"><thead><tr><th>Branch</th><th>Today</th><th>This week</th><th>MTD</th><th>Growth</th><th>Share</th></tr></thead><tbody>{comparison.map(b => <tr key={b.id}><td>{b.name}</td><td>{money(b.today)}</td><td>{money(b.week)}</td><td>{money(b.mtd)}</td><td>{b.growth === null ? "—" : `${Number(b.growth).toFixed(1)}%`}</td><td><Bar pct={Number(b.share)} c="bg-sage"/></td></tr>)}</tbody></table></div>}
+    <div className="card"><h2 className="font-semibold">Sales trend</h2><p className="text-sm text-black/50">Daily sales; forecast average {trend ? money(trend.forecast.dailyAverage) : "—"} ± 8%</p>{values.length > 1 && <Line a={values}/>}</div>
+    <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold mb-2">Best sellers · this month</h2><table className="w-full"><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Margin</th></tr></thead><tbody>{best.slice(0, 5).map(p => <tr key={p.productId}><td>{p.name}</td><td>{p.units}</td><td>{money(p.revenue)}</td><td>{p.margin}%</td></tr>)}</tbody></table></div><div className="card"><h2 className="font-semibold">Peak hours</h2>{peak.length ? peak.map(p => <p key={p.local_hour} className="flex justify-between py-1"><span>{String(p.local_hour).padStart(2, "0")}:00</span><span>{p.customers} sales · {money(p.sales)}</span></p>) : <p className="text-sm text-black/50">No sales today yet.</p>}<Link href="/sales" className="text-brand underline">Open sales</Link></div></div>
+    <div className="card"><h2 className="font-semibold">Expense tracking</h2><div className="text-3xl font-semibold my-2">{peso(expenses)}</div>{(expenseReport?.categories ?? expenseCats.map(c => ({ categoryId: c.n, categoryName: c.n, total: "0" }))).map((c: any) => <div key={c.categoryId} className="flex justify-between py-1.5 text-sm"><span>{c.categoryName}</span><span>{peso(Number(c.total) / 100)} <span className="text-black/40">{expenses ? `${(Number(c.total) / (expenses * 100) * 100).toFixed(1)}%` : "0%"}</span></span></div>)}</div>
+    <h2 className="text-xl font-semibold pt-2">Your attention, where it matters</h2><div className="grid md:grid-cols-3 gap-4"><div className="card"><b>{low.length} stock items need attention</b><p className="text-sm text-black/55 my-2">{lowLabel}</p><Link href="/inventory" className="text-brand underline">Review inventory</Link></div><div className="card"><b>{user.role === "owner" ? "Branch sales performance" : "Plan for the lunch rush"}</b><p className="text-sm text-black/55 my-2">{user.role === "owner" ? "Review current branch figures and growth." : peakHour ? `Busiest hour is ${String(peakHour.local_hour).padStart(2, "0")}:00. Keep bar and kitchen coverage aligned.` : "No sales today yet."}</p><Link href="/sales" className="text-brand underline">Open sales</Link></div><div className="card"><b>Review recent activity</b><p className="text-sm text-black/55 my-2">Voids, price changes and stock adjustments are logged.</p><Link href="/staff" className="text-brand underline">View activity</Link></div></div>
+  </Page>;
+}

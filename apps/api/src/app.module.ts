@@ -1,6 +1,6 @@
-import { CallHandler, ExecutionContext, Injectable, MiddlewareConsumer, Module, NestInterceptor, NestModule, RequestMethod } from '@nestjs/common';
+import { CallHandler, ExecutionContext, HttpStatus, Injectable, MiddlewareConsumer, Module, NestInterceptor, NestModule, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { NextFunction, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { mergeMap } from 'rxjs';
@@ -34,7 +34,7 @@ class CatalogVersionInterceptor implements NestInterceptor {
 
 @Module({
   imports: [DbModule, AuthModule],
-  providers: [{ provide: CLOCK, useClass: SystemClock }, { provide: APP_INTERCEPTOR, useClass: CatalogVersionInterceptor }],
+  providers: [{ provide: CLOCK, useClass: SystemClock }, { provide: APP_INTERCEPTOR, useClass: CatalogVersionInterceptor }, { provide: APP_PIPE, useFactory: () => new ValidationPipe({ transform: true, errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }) }],
   exports: [CLOCK],
 })
 export class AppModule implements NestModule {
