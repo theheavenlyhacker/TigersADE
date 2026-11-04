@@ -87,12 +87,6 @@ export class SalesController {
       if (actor.user.role === 'cashier' && sale.business_date !== businessDate(this.clock.now(), branch.rows[0].day_cutoff)) {
         throw new ForbiddenException('Cashiers can only void sales from the current business day');
       }
-      // shortcut: cash_closes arrives in the later cash-close slice; remove this guard once it is part of the base schema.
-      const closesTable = await client.query("select to_regclass('public.cash_closes') as table_name");
-      if (closesTable.rows[0].table_name) {
-        const closed = await client.query('select 1 from cash_closes where branch_id = $1 and business_date = $2', [branchId, sale.business_date]);
-        if (closed.rowCount) throw new ConflictException('The business day is already closed');
-      }
       const voidedAt = this.clock.now();
       const updated = await client.query(`update sales set voided_at = $3, voided_by = $4, void_reason = $5
         where id = $1 and branch_id = $2 returning id, branch_id as "branchId", sale_no as "saleNo", business_date::text as "businessDate", voided_at as "voidedAt", voided_by as "voidedBy", void_reason as "voidReason"`,

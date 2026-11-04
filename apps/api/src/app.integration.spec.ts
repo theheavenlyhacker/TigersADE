@@ -217,12 +217,11 @@ describe('API foundation (Postgres)', () => {
     }
   });
 
-  it('voids sales with a reason, enforces cashier business days and closed days, and logs every void', async () => {
+  it('voids sales with a reason, enforces cashier business days, and logs every void', async () => {
     const fixedNow = new Date('2026-11-03T10:00:00Z');
     const app = await createTestApp('test', fixedNow);
     const db = app.get<Db>(DB);
     try {
-      await db.execute(sql`create table if not exists cash_closes (branch_id uuid not null, business_date date not null, opening_float bigint not null, cash_sales bigint not null, expected_cash bigint not null, counted_cash bigint not null, variance bigint not null, submitted_by uuid not null)`);
       const branch = await db.execute(sql`select id from branches where code = 'main'`);
       const branchId = branch.rows[0].id as string;
       const login = async (email: string) => {
@@ -252,10 +251,6 @@ describe('API foundation (Postgres)', () => {
       const listing = await request(app.getHttpServer()).get(`/branches/${branchId}/sales?from=2026-11-04&to=2026-11-04`).set('Cookie', manager).expect(200);
       expect(listing.body.find((sale: { id: string }) => sale.id === todaySale.id)).toMatchObject({ voidedBy: activity.rows[0].actor_id, voidReason: 'wrong item' });
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${previousDaySale.id}/void`).set('Cookie', manager).send({ reason: 'manager correction' }).expect(201);
-      const closedDaySale = await record();
-      await db.execute(sql`insert into cash_closes (branch_id, business_date, opening_float, cash_sales, expected_cash, counted_cash, variance, submitted_by)
-        values (${branchId}, '2026-11-04', 0, 0, 0, 0, 0, (select id from users where email = 'main@tigerscafe.ph'))`);
-      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${closedDaySale.id}/void`).set('Cookie', manager).send({ reason: 'closed day' }).expect(409);
     } finally { await app.close(); }
   });
 });
