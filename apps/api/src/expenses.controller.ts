@@ -6,6 +6,8 @@ import { DB_POOL } from './db/db.module';
 import { logActivity } from './db/activity';
 import { AccessGuard, Roles } from './auth/access.guard';
 import { AuthService, sessionToken } from './auth/auth.service';
+import { CLOCK, Clock } from './clock';
+import { businessDate } from './sales.controller';
 
 const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const date = (v: unknown): v is string => {
@@ -99,7 +101,13 @@ export class ExpensesController {
 @UseGuards(AccessGuard)
 @Roles('owner', 'manager')
 export class ExpenseReportsController {
-  constructor(@Inject(DB_POOL) private readonly pool: Pool, private readonly auth: AuthService) {}
+  constructor(@Inject(DB_POOL) private readonly pool: Pool, private readonly auth: AuthService, @Inject(CLOCK) private readonly clock: Clock) {}
+
+  private async branchDates(ids: string[]) {
+    const rows = await this.pool.query('select id, day_cutoff::text as cutoff from branches where id=any($1::uuid[]) order by code', [ids]);
+    const now = this.clock.now();
+    return rows.rows.map(r => ({ id: r.id as string, today: businessDate(now, r.cutoff as string) }));
+  }
 
   private async branches(branch: string, req: Request) {
     const current = await this.auth.current(sessionToken(req));
@@ -112,10 +120,9 @@ export class ExpenseReportsController {
   @Get('summary')
   async summary(@Query('branch') branch: string, @Req() req: Request) {
     const ids = await this.branches(branch, req);
-    const rows = await this.pool.query(`select b.id as "branchId", coalesce(s.total,0)::text as sales, coalesce(e.total,0)::text as expenses
-      from branches b left join (select branch_id, sum(total) total from sales where voided_at is null and business_date between date_trunc('month', (now() at time zone 'Asia/Manila'))::date and (now() at time zone 'Asia/Manila')::date group by branch_id) s on s.branch_id=b.id
-      left join (select branch_id, sum(amount) total from expenses where business_date between date_trunc('month', (now() at time zone 'Asia/Manila'))::date and (now() at time zone 'Asia/Manila')::date group by branch_id) e on e.branch_id=b.id where b.id=any($1::uuid[]) order by b.code`, [ids]);
-    const branches = rows.rows.map(r => ({ ...r, operatingContribution: (BigInt(r.sales) - BigInt(r.expenses)).toString() }));
+    const dates = await this.branchDates(ids);
+    const rows = await Promise.all(dates.map(({ id, today }) => this.pool.query(`select $1::uuid as "branchId", coalesce((select sum(total) from sales where branch_id=$1 and voided_at is null and business_date between $2 and $3),0)::text as sales, coalesce((select sum(amount) from expenses where branch_id=$1 and business_date between $2 and $3),0)::text as expenses`, [id, `${today.slice(0, 7)}-01`, today])));
+    const branches = rows.map(result => result.rows[0]).map(r => ({ ...r, operatingContribution: (BigInt(r.sales) - BigInt(r.expenses)).toString() }));
     return { branches, sales: branches.reduce((n, b) => n + BigInt(b.sales), 0n).toString(), expenses: branches.reduce((n, b) => n + BigInt(b.expenses), 0n).toString(), operatingContribution: branches.reduce((n, b) => n + BigInt(b.operatingContribution), 0n).toString() };
   }
 
@@ -124,11 +131,13 @@ export class ExpenseReportsController {
     if (!/^\d{4}-\d{2}$/.test(month ?? '') || Number(month.slice(5)) < 1 || Number(month.slice(5)) > 12) throw new UnprocessableEntityException('month must be YYYY-MM');
     const ids = await this.branches(branch, req);
     const from = `${month}-01`, monthEnd = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0)).toISOString().slice(0, 10);
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const to = month === today.slice(0, 7) ? today : monthEnd;
+    const dates = await this.branchDates(ids);
+    const bounds = dates.map(({ id, today }) => ({ id, from, to: month === today.slice(0, 7) ? today : monthEnd }));
+    const values = bounds.flatMap(({ id, from: start, to }) => [id, start, to]);
+    const clauses = bounds.map((_, i) => `(e.branch_id=$${i * 3 + 1} and e.business_date between $${i * 3 + 2} and $${i * 3 + 3})`).join(' or ') || 'false';
     const [categories, totals] = await Promise.all([
-      this.pool.query(`select c.id as "categoryId", c.name as "categoryName", coalesce(sum(e.amount),0)::text as total from expense_categories c left join expenses e on e.category_id=c.id and e.branch_id=any($1::uuid[]) and e.business_date between $2 and $3 group by c.id, c.name order by c.name`, [ids, from, to]),
-      this.pool.query(`select coalesce((select sum(amount) from expenses where branch_id=any($1::uuid[]) and business_date between $2 and $3),0)::text as expenses, coalesce((select sum(total) from sales where branch_id=any($1::uuid[]) and business_date between $2 and $3 and voided_at is null),0)::text as sales`, [ids, from, to]),
+      this.pool.query(`select c.id as "categoryId", c.name as "categoryName", coalesce(sum(e.amount),0)::text as total from expense_categories c left join expenses e on e.category_id=c.id and (${clauses}) group by c.id, c.name order by c.name`, values),
+      this.pool.query(`select coalesce(sum(amount),0)::text as expenses, coalesce((select sum(s.total) from sales s join branches b on b.id=s.branch_id where s.voided_at is null and (${bounds.map((_, i) => `(s.branch_id=$${i * 3 + 1} and s.business_date between $${i * 3 + 2} and $${i * 3 + 3})`).join(' or ') || 'false'})),0)::text as sales from expenses e where ${clauses}`, values),
     ]);
     const totalExpenses = totals.rows[0].expenses as string, sales = totals.rows[0].sales as string;
     return { month, categories: categories.rows, expenses: totalExpenses, sales, shareOfSales: BigInt(sales) === 0n ? null : Number((BigInt(totalExpenses) * 10000n) / BigInt(sales)) / 100 };
