@@ -57,8 +57,8 @@ export class DrizzleUsersRepository extends UsersRepository {
     await tx.delete(sessions).where(eq(sessions.userId, userId));
   }
 
-  async setPassword(id: string, passwordHash: string) {
-    const rows = await this.db.update(users).set({ passwordHash }).where(and(eq(users.id, id), eq(users.active, true))).returning({ id: users.id });
+  async setPassword(tx: Executor, id: string, passwordHash: string) {
+    const rows = await tx.update(users).set({ passwordHash }).where(and(eq(users.id, id), eq(users.active, true))).returning({ id: users.id });
     return rows.length > 0;
   }
 }

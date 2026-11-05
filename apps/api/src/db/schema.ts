@@ -103,7 +103,7 @@ export const reorderRequests = pgTable('reorder_requests', {
   status: text('status', { enum: ['requested', 'received', 'cancelled'] }).notNull().default('requested'), note: text('note'),
   requestedBy: uuid('requested_by').notNull().references(() => users.id), resolvedBy: uuid('resolved_by').references(() => users.id),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => [index('reorder_requests_branch_status_idx').on(t.branchId, t.status), check('reorder_requests_quantity_positive', sql`${t.quantity} > 0`),
+}, t => [index('reorder_requests_branch_status_idx').on(t.branchId, t.status), index('reorder_requests_branch_created_idx').on(t.branchId, t.createdAt.desc()), check('reorder_requests_quantity_positive', sql`${t.quantity} > 0`),
   check('reorder_requests_status_valid', sql`${t.status} in ('requested','received','cancelled')`),
   check('reorder_requests_resolution_consistent', sql`(${t.status} = 'requested') = (${t.resolvedBy} is null and ${t.resolvedAt} is null)`)]);
 export const stockMovements = pgTable('stock_movements', {

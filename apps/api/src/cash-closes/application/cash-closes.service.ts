@@ -3,6 +3,7 @@ import { ActivityLog } from '../../db/activity-log';
 import { UnitOfWork } from '../../db/unit-of-work';
 import { businessDate as currentBusinessDate } from '../../shared/business-date';
 import { CLOCK, Clock } from '../../shared/clock';
+import { asHttp } from '../../shared/domain-error';
 import { assertDayHasStarted, reconcile } from '../domain/cash-close';
 import { CashClosesRepository } from './cash-closes.repository';
 
@@ -26,9 +27,9 @@ export class CashClosesService {
     return this.uow.run(async tx => {
       const branch = await this.repo.lockBranch(tx, branchId);
       if (!branch) throw new NotFoundException();
-      assertDayHasStarted(input.businessDate, currentBusinessDate(this.clock.now(), branch.dayCutoff));
+      asHttp(() => assertDayHasStarted(input.businessDate, currentBusinessDate(this.clock.now(), branch.dayCutoff)));
       const cashSales = await this.repo.cashSales(tx, branchId, input.businessDate);
-      const { expectedCash, variance } = reconcile(BigInt(input.openingFloat), BigInt(cashSales), BigInt(input.countedCash));
+      const { expectedCash, variance } = asHttp(() => reconcile(BigInt(input.openingFloat), BigInt(cashSales), BigInt(input.countedCash)));
       const close = await this.repo.insert(tx, {
         branchId, businessDate: input.businessDate, openingFloat: input.openingFloat, cashSales, expectedCash: expectedCash.toString(),
         countedCash: input.countedCash, variance: variance.toString(), note: input.note ?? null, submittedBy: actorId,

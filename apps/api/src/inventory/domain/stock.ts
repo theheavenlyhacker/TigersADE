@@ -1,4 +1,4 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { DomainError } from '../../shared/domain-error';
 
 export type MovementType = 'received' | 'wastage' | 'adjustment' | 'count';
 
@@ -13,8 +13,8 @@ const text = (n: bigint) => `${n < 0n ? '-' : ''}${(n < 0n ? -n : n) / 1000n}.${
  */
 export function movementDelta(type: MovementType, quantity: string, onHand: string): string {
   const qty = milli(quantity);
-  if (type !== 'count' && qty === 0n) throw new UnprocessableEntityException('quantity must not be zero');
-  if (type !== 'adjustment' && qty < 0n) throw new UnprocessableEntityException('quantity must be positive; adjustments may be negative');
+  if (type !== 'count' && qty === 0n) throw new DomainError('invalid', 'quantity must not be zero');
+  if (type !== 'adjustment' && qty < 0n) throw new DomainError('invalid', 'quantity must be positive; adjustments may be negative');
   if (type === 'wastage') return text(-qty);
   if (type === 'count') return text(qty - milli(onHand));
   return text(qty);

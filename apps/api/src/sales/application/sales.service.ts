@@ -1,10 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CurrentUser } from '../../auth/domain/current-user';
 import { ActivityLog } from '../../db/activity-log';
 import { UnitOfWork } from '../../db/unit-of-work';
-import { ConflictException } from '@nestjs/common';
 import { businessDate } from '../../shared/business-date';
 import { CLOCK, Clock } from '../../shared/clock';
+import { asHttp } from '../../shared/domain-error';
 import { SaleLineInput, assertCanVoid, priceSale } from '../domain/sale';
 import { SalesRepository } from './sales.repository';
 
@@ -29,7 +29,8 @@ export class SalesService {
       }
       const saleDate = businessDate(this.clock.now(), branch.dayCutoff);
       if (await this.repo.isDayClosed(tx, branchId, saleDate)) throw new ConflictException('This business day is already closed');
-      const { lines, total } = priceSale(await this.repo.findProducts(tx, input.lines.map(l => l.productId)), input.lines);
+      const products = await this.repo.findProducts(tx, input.lines.map(l => l.productId));
+      const { lines, total } = asHttp(() => priceSale(products, input.lines));
       const saleNo = await this.repo.allocateSaleNo(tx, branchId);
       const sale = { id: input.id, branchId, saleNo, businessDate: saleDate, paymentMethod: input.paymentMethod, total: total.toString() };
       await this.repo.insertSale(tx, { ...sale, cashierId: actor.id }, lines);
@@ -44,7 +45,7 @@ export class SalesService {
       const sale = await this.repo.lockSale(tx, saleId, branchId);
       if (!sale) throw new NotFoundException('Sale not found');
       const dayClosed = await this.repo.isDayClosed(tx, branchId, sale.businessDate);
-      assertCanVoid({ voided: sale.voided, businessDate: sale.businessDate, dayClosed }, actor, businessDate(this.clock.now(), branch.dayCutoff));
+      asHttp(() => assertCanVoid({ voided: sale.voided, dayClosed }));
       const voided = await this.repo.markVoided(tx, saleId, { actorId: actor.id, at: this.clock.now(), reason });
       await this.activity.record(tx, { branchId, actorId: actor.id, action: 'sale.voided', payload: { saleId, saleNo: sale.saleNo, reason } });
       return voided;

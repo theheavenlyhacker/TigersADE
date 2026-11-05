@@ -21,7 +21,7 @@ export class SalesController {
     return sale;
   }
 
-  @Post(':saleId/void')
+  @Post(':saleId/void') @Roles('owner', 'manager')
   void(@Param('branchId', uuidPipe) branchId: string, @Param('saleId', uuidPipe) saleId: string, @Body() body: VoidSaleDto, @CurrentUser() { user }: Current) {
     return this.sales.void(user, branchId, saleId, body.reason);
   }

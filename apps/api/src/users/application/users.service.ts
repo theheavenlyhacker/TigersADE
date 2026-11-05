@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { Role } from '../../auth/domain/current-user';
 import { ActivityLog } from '../../db/activity-log';
+import { asHttp } from '../../shared/domain-error';
 import { Executor, UnitOfWork } from '../../db/unit-of-work';
 import { assertBranchAssignment, assertStaffLink } from '../domain/user-rules';
 import { UsersRepository } from './users.repository';
@@ -18,7 +19,7 @@ export class UsersService {
   list() { return this.repo.list(); }
 
   async create(actorId: string, input: CreateUser) {
-    assertBranchAssignment(input.role, input.branchIds);
+    asHttp(() => assertBranchAssignment(input.role, input.branchIds));
     const branchIds = [...new Set(input.branchIds)];
     const passwordHash = await hash(input.password);
     return this.uow.run(async tx => {
@@ -31,7 +32,7 @@ export class UsersService {
   }
 
   async change(id: string, input: ChangeUser) {
-    assertBranchAssignment(input.role, input.branchIds);
+    asHttp(() => assertBranchAssignment(input.role, input.branchIds));
     const branchIds = [...new Set(input.branchIds)];
     await this.uow.run(async tx => {
       await this.checkStaffLink(tx, input.role, branchIds, input.staffMemberId);
@@ -53,12 +54,20 @@ export class UsersService {
     return { id, active: false };
   }
 
+  /** A reset ends every session the user has, like deactivating. */
   async resetPassword(id: string, password: string) {
-    if (!(await this.repo.setPassword(id, await hash(password)))) throw new NotFoundException();
+    const passwordHash = await hash(password);
+    await this.uow.run(async tx => {
+      if (!(await this.repo.setPassword(tx, id, passwordHash))) throw new NotFoundException();
+      await this.repo.deleteSessions(tx, id);
+    });
     return { id };
   }
 
   private async checkStaffLink(tx: Executor, role: Role, branchIds: string[], staffMemberId?: string | null) {
-    if (staffMemberId) assertStaffLink(role, branchIds, await this.repo.activeStaffBranch(tx, staffMemberId));
+    if (staffMemberId) {
+      const staffBranch = await this.repo.activeStaffBranch(tx, staffMemberId);
+      asHttp(() => assertStaffLink(role, branchIds, staffBranch));
+    }
   }
 }

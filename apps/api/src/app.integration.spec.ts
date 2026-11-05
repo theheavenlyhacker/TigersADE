@@ -492,7 +492,7 @@ describe('API foundation (Postgres)', () => {
     }
   });
 
-  it('voids sales with a reason, enforces cashier business days, and logs every void', async () => {
+  it('lets only managers void sales, with a reason, and logs every void', async () => {
     const fixedNow = new Date('2026-11-03T10:00:00Z');
     const app = await createTestApp('test', fixedNow);
     const db = app.get<Db>(DB);
@@ -515,11 +515,12 @@ describe('API foundation (Postgres)', () => {
       fixedNow.setUTCDate(fixedNow.getUTCDate() + 1);
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${previousDaySale.id}/void`).set('Cookie', cashier).send({ reason: 'wrong item' }).expect(403);
       const todaySale = await record();
-      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', cashier).send({ reason: ' ' }).expect(422);
-      const voided = await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', cashier).send({ reason: '  wrong item  ' }).expect(201);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', cashier).send({ reason: 'wrong item' }).expect(403);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', manager).send({ reason: ' ' }).expect(422);
+      const voided = await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', manager).send({ reason: '  wrong item  ' }).expect(201);
       expect(voided.body).toMatchObject({ id: todaySale.id, saleNo: todaySale.saleNo, businessDate: todaySale.businessDate, voidedBy: expect.any(String), voidReason: 'wrong item' });
       expect(voided.body.voidedAt).toBe(fixedNow.toISOString());
-      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', cashier).send({ reason: 'duplicate' }).expect(409);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${todaySale.id}/void`).set('Cookie', manager).send({ reason: 'duplicate' }).expect(409);
       const activity = await db.execute(sql`select action, actor_id, payload from activity_log where payload->>'saleId' = ${todaySale.id}`);
       expect(activity.rows).toHaveLength(1);
       expect(activity.rows[0]).toMatchObject({ action: 'sale.voided', payload: { saleId: todaySale.id, reason: 'wrong item' } });
@@ -550,7 +551,7 @@ describe('API foundation (Postgres)', () => {
       await request(app.getHttpServer()).post(`/branches/${branchId}/cash-closes`).set('Cookie', manager).send({ businessDate: '0000-01-01', openingFloat: '0', countedCash: '0' }).expect(422);
       const sale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
       const voidedSale = await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'cash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
-      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${voidedSale.body.id}/void`).set('Cookie', cashier).send({ reason: 'test void' }).expect(201);
+      await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${voidedSale.body.id}/void`).set('Cookie', manager).send({ reason: 'test void' }).expect(201);
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales`).set('Cookie', cashier).send({ id: randomUUID(), paymentMethod: 'gcash', lines: [{ productId: product.rows[0].id, qty: 1 }] }).expect(201);
       const preview = await request(app.getHttpServer()).get(`/branches/${branchId}/cash-closes/preview`).set('Cookie', manager).expect(200);
       expect(preview.body).toMatchObject({ businessDate: sale.body.businessDate, cashSales: (BigInt(initialPreview.body.cashSales) + BigInt(sale.body.total)).toString(), close: null });
@@ -614,6 +615,24 @@ describe('API foundation (Postgres)', () => {
       expect(BigInt(summary.body.expenses)).toBe(BigInt(beforeSummary.body.expenses) + 12345n);
       expect(summary.body).toMatchObject({ operatingContribution: (BigInt(summary.body.sales) - BigInt(summary.body.expenses)).toString() });
       await request(app.getHttpServer()).delete(`/branches/${annex.id}/expenses/${anyBranchExpense.body.id}`).set('Cookie', owner).expect(200);
+    } finally { await app.close(); }
+  });
+
+  it('rejects receiving a reorder for an archived item and locks logins after repeated failures', async () => {
+    const app = await createTestApp('test', new Date('2026-11-04T12:00:00+08:00'));
+    try {
+      const db = app.get<Db>(DB), http = () => request(app.getHttpServer());
+      const main = (await db.execute(sql`select id from branches where code = 'main'`)).rows[0] as { id: string };
+      const password = process.env.DEV_PASSWORD ?? 'tigers123';
+      const owner = (await http().post('/auth/login').send({ email: 'roy@tigerscafe.ph', password }).expect(201)).headers['set-cookie'][0].split(';')[0];
+      const item = (await http().post('/inventory-items').set('Cookie', owner).send({ name: `Archived reorder ${randomUUID()}`, unit: 'kg', unitCost: '100' }).expect(201)).body;
+      const reorder = (await http().post(`/branches/${main.id}/reorder-requests`).set('Cookie', owner).send({ itemId: item.id, quantity: '1' }).expect(201)).body;
+      await db.execute(sql`update inventory_items set active = false where id = ${item.id}`);
+      await http().post(`/branches/${main.id}/reorder-requests/${reorder.id}/receive`).set('Cookie', owner).expect(409);
+
+      const email = `lockout-${randomUUID()}@tigerscafe.ph`;
+      for (let i = 0; i < 5; i++) await http().post('/auth/login').send({ email, password: 'wrong-password' }).expect(401);
+      await http().post('/auth/login').send({ email, password: 'wrong-password' }).expect(429);
     } finally { await app.close(); }
   });
 });

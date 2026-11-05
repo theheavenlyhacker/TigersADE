@@ -16,5 +16,6 @@ export abstract class ReordersRepository {
   abstract resolve(tx: Executor, id: string, status: 'received' | 'cancelled', by: string): Promise<void>;
   /** Serialises with other stock changes for the same (branch, item). */
   abstract lockStock(tx: Executor, branchId: string, itemId: string): Promise<void>;
+  abstract itemActive(tx: Executor, itemId: string): Promise<boolean>;
   abstract insertReceivedMovement(tx: Executor, m: { branchId: string; itemId: string; quantity: string; createdBy: string; reorderRequestId: string }): Promise<void>;
 }

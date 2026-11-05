@@ -10,7 +10,7 @@ export class ReordersService {
   list(branchId: string, status: ReorderStatus | null) { return this.repo.list(branchId, status); }
 
   request(actorId: string, branchId: string, input: { itemId: string; quantity: string; note?: string | null }) {
-    if (Number(input.quantity) <= 0) throw new UnprocessableEntityException('itemId, positive quantity and optional note are required');
+    if (Number(input.quantity) <= 0) throw new UnprocessableEntityException('quantity must be positive');
     return this.uow.run(async tx => {
       if (!(await this.repo.branchExists(tx, branchId))) throw new NotFoundException();
       const id = await this.repo.insert(tx, { branchId, itemId: input.itemId, quantity: input.quantity, note: input.note ?? null, requestedBy: actorId });
@@ -30,6 +30,7 @@ export class ReordersService {
       await this.repo.resolve(tx, requestId, status, actorId);
       if (status === 'received') {
         await this.repo.lockStock(tx, branchId, current.itemId);
+        if (!(await this.repo.itemActive(tx, current.itemId))) throw new ConflictException('Inventory item is archived');
         await this.repo.insertReceivedMovement(tx, { branchId, itemId: current.itemId, quantity: current.quantity, createdBy: actorId, reorderRequestId: requestId });
       }
       const request = await this.repo.byId(tx, branchId, requestId);

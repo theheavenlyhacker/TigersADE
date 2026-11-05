@@ -1,8 +1,8 @@
 import { ParseUUIDPipe } from '@nestjs/common';
 import { Transform } from 'class-transformer';
+import { INT8_MAX } from './sql';
 import { IsISO8601, Matches, ValidateBy, ValidationOptions, buildMessage } from 'class-validator';
 
-const INT8_MAX = 9223372036854775807n;
 
 /** Path params: 422 (not Nest's default 400) for a malformed id. */
 export const uuidPipe = new ParseUUIDPipe({ errorHttpStatusCode: 422 });

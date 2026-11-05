@@ -55,6 +55,10 @@ export class DrizzleReordersRepository extends ReordersRepository {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${branchId}), hashtext(${itemId}))`);
   }
 
+  async itemActive(tx: Executor, itemId: string) {
+    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true)))).length > 0;
+  }
+
   async insertReceivedMovement(tx: Executor, m: { branchId: string; itemId: string; quantity: string; createdBy: string; reorderRequestId: string }) {
     await tx.insert(stockMovements).values({ branchId: m.branchId, itemId: m.itemId, type: 'received', qtyDelta: m.quantity, note: 'Reorder received', createdBy: m.createdBy, reorderRequestId: m.reorderRequestId });
   }

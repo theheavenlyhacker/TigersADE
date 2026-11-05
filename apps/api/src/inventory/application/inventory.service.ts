@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ActivityLog } from '../../db/activity-log';
 import { UnitOfWork } from '../../db/unit-of-work';
+import { asHttp } from '../../shared/domain-error';
 import { MovementType, isLowStock, isNegativeStock, movementDelta } from '../domain/stock';
 import { InventoryRepository, ItemView } from './inventory.repository';
 
@@ -51,7 +52,7 @@ export class InventoryService {
       await this.repo.lockStock(tx, branchId, input.itemId);
       if (!(await this.repo.activeItemExists(tx, input.itemId))) throw new NotFoundException('Active inventory item not found');
       const onHand = input.type === 'count' ? await this.repo.onHand(tx, branchId, input.itemId) : '0';
-      const movement = await this.repo.insertMovement(tx, { branchId, itemId: input.itemId, type: input.type, qtyDelta: movementDelta(input.type, input.quantity, onHand), note: input.note ?? null, createdBy: actorId });
+      const movement = await this.repo.insertMovement(tx, { branchId, itemId: input.itemId, type: input.type, qtyDelta: asHttp(() => movementDelta(input.type, input.quantity, onHand)), note: input.note ?? null, createdBy: actorId });
       await this.activity.record(tx, { branchId, actorId, action: 'stock.moved', payload: { movement } });
       return movement;
     });

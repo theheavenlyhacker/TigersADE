@@ -13,5 +13,5 @@ export abstract class UsersRepository {
   abstract updateRole(tx: Executor, id: string, role: Role, staff: { set: boolean; staffMemberId: string | null }): Promise<boolean>;
   abstract deactivate(tx: Executor, id: string): Promise<{ id: string; email: string } | null>;
   abstract deleteSessions(tx: Executor, userId: string): Promise<void>;
-  abstract setPassword(id: string, passwordHash: string): Promise<boolean>;
+  abstract setPassword(tx: Executor, id: string, passwordHash: string): Promise<boolean>;
 }

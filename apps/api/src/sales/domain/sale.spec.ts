@@ -1,3 +1,4 @@
+import { DomainError } from '../../shared/domain-error';
 import { assertCanVoid, priceSale } from './sale';
 
 const latte = { id: 'a', name: 'Latte', price: '15000', unitCost: '5000', active: true };
@@ -16,14 +17,11 @@ describe('priceSale', () => {
 });
 
 describe('assertCanVoid', () => {
-  const sale = { voided: false, businessDate: '2026-11-04', dayClosed: false };
-  it('lets a cashier void only on the current business day', () => {
-    expect(() => assertCanVoid(sale, { role: 'cashier' }, '2026-11-04')).not.toThrow();
-    expect(() => assertCanVoid(sale, { role: 'cashier' }, '2026-11-05')).toThrow('current business day');
-    expect(() => assertCanVoid(sale, { role: 'manager' }, '2026-11-05')).not.toThrow();
-  });
+  const sale = { voided: false, dayClosed: false };
+  it('allows an open, unvoided sale', () => { expect(() => assertCanVoid(sale)).not.toThrow(); });
+  it('throws domain errors, not HTTP ones', () => { expect(() => assertCanVoid({ ...sale, voided: true })).toThrow(DomainError); });
   it('rejects voided sales and closed days', () => {
-    expect(() => assertCanVoid({ ...sale, voided: true }, { role: 'owner' }, '2026-11-04')).toThrow('already voided');
-    expect(() => assertCanVoid({ ...sale, dayClosed: true }, { role: 'owner' }, '2026-11-04')).toThrow('closed');
+    expect(() => assertCanVoid({ ...sale, voided: true })).toThrow('already voided');
+    expect(() => assertCanVoid({ ...sale, dayClosed: true })).toThrow('closed');
   });
 });

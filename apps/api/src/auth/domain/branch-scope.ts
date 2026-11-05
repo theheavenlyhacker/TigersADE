@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { DomainError } from '../../shared/domain-error';
 import { CurrentUser } from './current-user';
 
 /**
@@ -8,9 +8,9 @@ import { CurrentUser } from './current-user';
 export function branchScope(current: CurrentUser, branch?: string): string[] {
   if (branch === undefined) return current.branches.map(b => b.id);
   if (branch === 'all') {
-    if (current.user.role !== 'owner') throw new ForbiddenException();
+    if (current.user.role !== 'owner') throw new DomainError('forbidden', 'Forbidden');
     return current.branches.map(b => b.id);
   }
-  if (!current.branches.some(b => b.id === branch)) throw new ForbiddenException();
+  if (!current.branches.some(b => b.id === branch)) throw new DomainError('forbidden', 'Forbidden');
   return [branch];
 }

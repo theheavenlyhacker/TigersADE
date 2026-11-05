@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/Auth";
 import { Page } from "@/components/ui";
+import { apiUrl } from "@/lib/catalog";
 
-const api = process.env.NEXT_PUBLIC_API_URL ?? (typeof window === "undefined" ? "http://localhost:4000" : `http://${window.location.hostname}:4000`);
+const api = apiUrl();
 type Settings = { id: string; code: string; name: string; dailyTarget: string | null; dayCutoff: string };
 
 export default function BranchSettings() {

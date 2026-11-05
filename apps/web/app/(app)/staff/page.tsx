@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/Auth";
 import { Page } from "@/components/ui";
+import { apiUrl } from "@/lib/catalog";
 
-const api = process.env.NEXT_PUBLIC_API_URL ?? (typeof window === "undefined" ? "http://localhost:4000" : `http://${window.location.hostname}:4000`);
+const api = apiUrl();
 type Staff = {id:string;branchId:string;name:string;position:string;shiftStart:string;shiftEnd:string};
 type User = {id:string;email:string;name:string;role:string;active:boolean;staffMemberId:string|null;branchIds:string[]};
 type Entry = {id:string;branchId:string|null;branchName:string|null;actorName:string;action:string;payload:Record<string,unknown>;createdAt:string};
