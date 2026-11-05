@@ -11,6 +11,7 @@ import { ReportsController } from '../reports.controller';
 import { ExpensesController, ExpenseReportsController } from '../expenses.controller';
 import { StaffController } from './staff.controller';
 import { CLOCK, SystemClock } from '../clock';
+import { InventoryController } from '../inventory.controller';
 
-@Module({ controllers: [AuthController, BranchesController, ActivityController, CatalogController, SalesController, ReportsController, CashClosesController, StaffController, ExpensesController, ExpenseReportsController], providers: [AuthService, AccessGuard, { provide: CLOCK, useClass: SystemClock }], exports: [AccessGuard] })
+@Module({ controllers: [AuthController, BranchesController, ActivityController, CatalogController, SalesController, ReportsController, CashClosesController, StaffController, ExpensesController, ExpenseReportsController, InventoryController], providers: [AuthService, AccessGuard, { provide: CLOCK, useClass: SystemClock }], exports: [AccessGuard] })
 export class AuthModule {}

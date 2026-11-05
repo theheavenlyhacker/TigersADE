@@ -77,6 +77,23 @@ async function main() {
     for (const category of ['ingredients and supplies', 'payroll', 'rent', 'utilities', 'other']) {
       await pool.query('insert into expense_categories (name) values ($1) on conflict (name) do nothing', [category]);
     }
+    const stock = [
+      ['Espresso beans', 'kg', 180000, 'main', 42, 30], ['Espresso beans', 'kg', 180000, 'annex', 25, 25], ['Espresso beans', 'kg', 180000, 'pacol', 9, 25],
+      ['Oat milk', 'L', 8500, 'main', 12, 40], ['Oat milk', 'L', 8500, 'pacol', 8, 30],
+      ['Croissant dough', 'pcs', 5500, 'main', 90, 80], ['Matcha powder', 'kg', 420000, 'annex', 3, 6],
+      ['Avocados', 'pcs', 6500, 'annex', 18, 30], ['Paper cups', 'pcs', 120, 'pacol', 600, 500],
+    ] as const;
+    for (const [name, unit, cost, code, onHand, par] of stock) {
+      await pool.query('insert into inventory_items (name, unit, unit_cost) values ($1,$2,$3) on conflict (name) do update set unit=excluded.unit, unit_cost=excluded.unit_cost, active=true', [name, unit, cost]);
+      const opening = await pool.query(`insert into branch_inventory (branch_id,item_id,par) select b.id,i.id,$3 from branches b cross join inventory_items i
+        where b.code=$1 and i.name=$2 on conflict (branch_id,item_id) do nothing returning branch_id,item_id`, [code, name, String(par)]);
+      if (opening.rowCount) {
+        const actor = await pool.query('select id from users where email=$1', [`${code}@tigerscafe.ph`]);
+        const movement = await pool.query(`insert into stock_movements (branch_id,item_id,type,qty_delta,note,created_by)
+          select $1,$2,'adjustment',$3,'Opening stock from prototype',$4 returning id`, [opening.rows[0].branch_id, opening.rows[0].item_id, String(onHand), actor.rows[0].id]);
+        await pool.query(`insert into activity_log (branch_id,actor_id,action,payload) values ($1,$2,'stock.moved',$3::jsonb)`, [opening.rows[0].branch_id, actor.rows[0].id, JSON.stringify({ movementId: movement.rows[0].id, itemId: opening.rows[0].item_id, type: 'adjustment', qtyDelta: String(onHand), note: 'Opening stock from prototype' })]);
+      }
+    }
   } finally { await pool.end(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

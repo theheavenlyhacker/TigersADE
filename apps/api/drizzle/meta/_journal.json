@@ -85,6 +85,20 @@
       "when": 1793810834424,
       "tag": "0011_useful_maginty",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793835692216,
+      "tag": "0012_charming_the_enforcers",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793835729714,
+      "tag": "0013_unknown_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

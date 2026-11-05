@@ -238,6 +238,47 @@ describe('API foundation (Postgres)', () => {
     } finally { await app.close(); }
   });
 
+  it('tracks branch stock from movements, counts by difference, and values current stock', async () => {
+    const app = await createTestApp('test', new Date('2026-11-04T12:00:00+08:00'));
+    try {
+      const db = app.get<Db>(DB);
+      const branches = await db.execute(sql`select id,code from branches where code in ('main','annex')`);
+      const main = (branches.rows as any[]).find(b => b.code === 'main')!, annex = (branches.rows as any[]).find(b => b.code === 'annex')!;
+      const login = async (email: string) => {
+        const result = await request(app.getHttpServer()).post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201);
+        return result.headers['set-cookie'][0].split(';')[0];
+      };
+      const owner = await login('roy@tigerscafe.ph'), manager = await login('main@tigerscafe.ph');
+      const name = `Inventory integration ${randomUUID()}`;
+      const created = await request(app.getHttpServer()).post('/inventory-items').set('Cookie', owner).send({ name, unit: 'kg', unitCost: '2500' }).expect(201);
+      await request(app.getHttpServer()).patch(`/inventory-items/${created.body.id}`).set('Cookie', owner).send({ unitCost: '3000' }).expect(200);
+      await request(app.getHttpServer()).post('/inventory-items').set('Cookie', manager).send({ name: `${name} denied`, unit: 'kg', unitCost: '1' }).expect(403);
+      await request(app.getHttpServer()).put(`/branches/${main.id}/inventory/${created.body.id}`).set('Cookie', manager).send({ par: '4' }).expect(200);
+      await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: created.body.id, type: 'received', quantity: '5' }).expect(201);
+      const count = await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: created.body.id, type: 'count', quantity: '2' }).expect(201);
+      expect(count.body.qtyDelta).toBe('-3.000');
+      await request(app.getHttpServer()).get(`/branches/${annex.id}/inventory`).set('Cookie', manager).expect(403);
+      let stock = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200);
+      expect(stock.body).toContainEqual(expect.objectContaining({ itemId: created.body.id, onHand: '2.000', par: '4.000', lowStock: true, value: '6000' }));
+      await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: created.body.id, type: 'adjustment', quantity: '-5' }).expect(201);
+      stock = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200);
+      expect(stock.body).toContainEqual(expect.objectContaining({ itemId: created.body.id, onHand: '-3.000', lowStock: true, negativeStock: true, value: '-9000' }));
+      const unpar = await request(app.getHttpServer()).post('/inventory-items').set('Cookie', owner).send({ name: `${name} no par`, unit: 'kg', unitCost: '100' }).expect(201);
+      await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: unpar.body.id, type: 'adjustment', quantity: '-1' }).expect(201);
+      stock = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200);
+      expect(stock.body).toContainEqual(expect.objectContaining({ itemId: unpar.body.id, par: null, onHand: '-1.000', lowStock: false, negativeStock: true }));
+      const lowOnly = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory?low=true`).set('Cookie', manager).expect(200);
+      expect(lowOnly.body.map((row: { itemId: string }) => row.itemId)).toEqual(expect.arrayContaining([created.body.id, unpar.body.id]));
+      await request(app.getHttpServer()).patch(`/inventory-items/${unpar.body.id}`).set('Cookie', owner).send({ active: false }).expect(200);
+      const report = await request(app.getHttpServer()).get(`/reports/summary?branch=${main.id}&date=2026-11-04`).set('Cookie', manager).expect(200);
+      const baseline = await db.execute(sql`select coalesce(sum(coalesce(m.on_hand,0)*i.unit_cost),0)::bigint::text value from branch_inventory bi join inventory_items i on i.id=bi.item_id and i.active left join lateral (select sum(qty_delta) on_hand from stock_movements where branch_id=bi.branch_id and item_id=bi.item_id) m on true where bi.branch_id=${main.id} and i.id<>${created.body.id}`);
+      expect(Number(report.body.inventoryValue)).toBe(Number(baseline.rows[0].value) - 9000);
+      const audit = await db.execute(sql`select count(*)::int n from activity_log where payload->>'itemId'=${created.body.id} or payload->'movement'->>'itemId'=${created.body.id}`);
+      expect(audit.rows[0].n).toBe(6);
+      await request(app.getHttpServer()).patch(`/inventory-items/${created.body.id}`).set('Cookie', owner).send({ active: false }).expect(200);
+    } finally { await app.close(); }
+  });
+
   it('reports exact fixed-date figures and excludes voided sales', async () => {
     const app = await createTestApp('test', new Date('2026-04-01T12:00:00Z'));
     const fixtureSaleIds: string[] = [];
