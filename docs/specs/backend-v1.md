@@ -36,6 +36,7 @@ Postgres (single database, single tenant)
 - No Redis, no queue, no extra services.
 - Timestamps are `timestamptz` (UTC). The business time zone is fixed: `Asia/Manila`.
 - Money is `bigint` centavos everywhere, in the API and the database. The frontend divides by 100 only for display (`peso()`).
+- Local development: Postgres in Docker Compose is published on `127.0.0.1:5433` only; `db:seed` needs `ALLOW_SEED=1`.
 - Deployment target: **undecided** (Railway or Render). The current Docker Compose setup is kept, and it should run on either.
 
 ## 3. Data model
@@ -122,7 +123,7 @@ These rules are enforced in one place: a guard checks the role and checks `:bran
 
 **Stock.** Stock on hand = Σ `qty_delta` per (branch, item). A count is stored as the difference (`counted − on_hand`). Stock may go negative. **Low stock** means on hand < `par`. Marking a reorder request received inserts a `received` movement for the request's `qty` linked to that request. Cancelling it inserts nothing.
 
-**Activity log.** It is written in the same transaction as the change, through one shared helper. Actions: `price.changed`, `product.created`, `product.archived`, `sale.voided`, `stock.moved`, `reorder.requested`, `reorder.received`, `expense.created`, `expense.updated`, `expense.deleted`, `cash_close.submitted`, `branch.target_changed`, `branch.cutoff_changed`, `user.created`, `user.deactivated`. The payload carries before and after values where they apply.
+**Activity log.** It is written in the same transaction as the change, through one shared helper. Actions: `price.changed`, `product.created`, `product.archived`, `sale.voided`, `stock.moved`, `reorder.requested`, `reorder.received`, `reorder.cancelled`, `inventory_item.created`, `inventory_item.updated`, `inventory_item.archived`, `inventory.par_set`, `expense.created`, `expense.updated`, `expense.deleted`, `cash_close.submitted`, `branch.target_changed`, `branch.cutoff_changed`, `user.created`, `user.deactivated`. The payload carries before and after values where they apply.
 
 **Sessions.** A random 32-byte token sits in an `httpOnly`, `SameSite=Lax` cookie (`Secure` too when `NODE_ENV=production`, since local development runs over plain HTTP), and only its SHA-256 hash is stored. Sessions last 7 days and extend on each use. Logging out, deactivating a user or resetting their password deletes their sessions. An email gets 5 login attempts per 15-minute window; further attempts get `429` until the window ends, and a successful login clears the count. Passwords are hashed with argon2id. The login endpoint gives the same error for an unknown email and a wrong password.
 
@@ -142,31 +143,34 @@ Branch-scoped resources live under `/branches/:branchId/...`. In reports, `branc
 |---|---|
 | `POST /auth/login`, `POST /auth/logout`, `GET /me` | Log in, log out, and get the current user with their allowed branches |
 | `GET /catalog` | Cached data (§6) |
+| `GET /branches/:id` | One branch the user can see |
 | `PATCH /branches/:id` | Set `dailyTarget` or `dayCutoff` (owner) |
 | `POST /products`, `PATCH /products/:id` | Owner; archive with `active: false` |
 | `POST /product-categories`, `PATCH /product-categories/:id` | Owner |
+| `POST /expense-categories`, `PATCH /expense-categories/:id` | Owner |
 | `POST /branches/:id/sales` | `{ id, paymentMethod, lines: [{ productId, qty }] }` |
 | `GET /branches/:id/sales?from&to` | List sales |
 | `POST /branches/:id/sales/:saleId/void` | `{ reason }` |
 | `GET /branches/:id/cash-closes/preview?businessDate` | Get `cash_sales` before submitting |
-| `POST /branches/:id/cash-closes`, `GET /branches/:id/cash-closes` | `{ businessDate, openingFloat, countedCash, note }` |
+| `POST /branches/:id/cash-closes` | `{ businessDate, openingFloat, countedCash, note }` |
 | `GET/POST/PATCH /inventory-items` | Owner manages the list |
 | `GET /branches/:id/inventory` | Stock on hand, par and low-stock flag for each item |
 | `PUT /branches/:id/inventory/:itemId` | Set `par` (adds the item to the branch) |
 | `POST/GET /branches/:id/stock-movements` | Record and list movements |
-| `POST/GET /branches/:id/reorder-requests`, `PATCH .../:rid` | `{ status: received \| cancelled }` |
+| `POST/GET /branches/:id/reorder-requests`, `POST .../:rid/receive`, `POST .../:rid/cancel` | Request, then resolve; receiving records a stock movement, and is `409` for an archived item |
 | `GET/POST/PATCH/DELETE /branches/:id/expenses` | Expenses |
 | `GET/POST/PATCH /branches/:id/staff-members` | Staff members |
-| `GET/POST/PATCH /users`, `POST /users/:id/password` | Owner |
+| `GET/POST/PATCH /users`, `POST /users/:id/password`, `POST /users/:id/deactivate` | Owner |
 | `GET /reports/summary?branch&date` | Today, week, month-to-date, customers, growth, month-to-date expenses, inventory value, operating contribution, daily target |
 | `GET /reports/trend?branch&granularity=daily\|weekly\|monthly` | Series by business day, plus forecast (daily average ± 8%) |
 | `GET /reports/comparison` | Each branch's today, week, month-to-date, growth and share (owner) |
 | `GET /reports/best-sellers?branch&from&to` | Units, revenue and margin for each product |
 | `GET /reports/expenses?branch&month` | Totals by category, and expenses as a share of sales |
 | `GET /reports/peak-hours?branch&from&to` | Sales by hour of day |
+| `GET /reports/product-sales?branch` | Units and revenue for each product |
 | `GET /activity?branch&limit&before` | Activity log, newest first |
 
-Validation happens at the API boundary (DTOs with class-validator). Errors: `401` not logged in, `403` role or branch not allowed, `404`, `409` rule conflict (day already closed, sale already voided), `422` invalid input.
+Validation happens at the API boundary (DTOs with class-validator). Errors: `401` not logged in, `403` role or branch not allowed, `404`, `409` rule conflict (day already closed, sale already voided), `422` invalid input, `429` too many login attempts.
 
 ## 8. Testing
 

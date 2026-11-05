@@ -119,11 +119,11 @@ One amount a branch spent on one business day, in one expense category.
 _Avoid_: Cost, spend
 
 **Expense category**:
-One of a fixed set of expense types: ingredients and supplies, payroll, rent, utilities and other.
+An expense type. Starts with ingredients and supplies, payroll, rent, utilities and other; the owner can add and rename categories.
 _Avoid_: Expense type
 
 **Cash close**:
-A branch's end-of-business-day count of the cash drawer. Once submitted it cannot change, and no more sales can be recorded for that business day.
+A branch's end-of-business-day count of the cash drawer. Once submitted it cannot change, and no more sales or voids can be recorded for that business day. It may be submitted at any time once the day has started.
 _Avoid_: EOD, Z-reading, closing
 
 **Opening float**:
@@ -145,5 +145,5 @@ _Avoid_: Profit, net income
 ## Oversight
 
 **Activity log**:
-The record of who changed what and when, for price changes, voids, stock movements, cash closes, expenses and changes to targets or cutoffs. Entries are never edited or removed.
+The record of who changed what and when, for price and product changes, voids, stock movements, inventory items and par levels, reorder requests, cash closes, expenses, users and changes to targets or cutoffs. Entries are never edited or removed.
 _Avoid_: Audit trail, history
