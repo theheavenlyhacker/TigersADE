@@ -24,7 +24,6 @@ cp apps/api/.env.example apps/api/.env
 
 ```
 DATABASE_URL=postgres://tigers:tigers@localhost:5433/tigers
-NODE_ENV=development
 ```
 
 Optional: `PORT` (default 4000), `WEB_ORIGIN` (CORS origin, default `http://localhost:3000`),

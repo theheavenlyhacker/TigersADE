@@ -79,7 +79,7 @@ export const saleLines = pgTable('sale_lines', {
   id: uuid('id').defaultRandom().primaryKey(), saleId: uuid('sale_id').notNull().references(() => sales.id),
   productId: uuid('product_id').notNull().references(() => products.id), productName: text('product_name').notNull(),
   unitPrice: bigint('unit_price', { mode: 'bigint' }).notNull(), unitCost: bigint('unit_cost', { mode: 'bigint' }).notNull(), qty: integer('qty').notNull(),
-}, t => [check('sale_lines_qty_positive', sql`${t.qty} > 0`), check('sale_lines_unit_price_nonnegative', sql`${t.unitPrice} >= 0`), check('sale_lines_unit_cost_nonnegative', sql`${t.unitCost} >= 0`)]);
+}, t => [index('sale_lines_sale_id_idx').on(t.saleId), check('sale_lines_qty_positive', sql`${t.qty} > 0`), check('sale_lines_unit_price_nonnegative', sql`${t.unitPrice} >= 0`), check('sale_lines_unit_cost_nonnegative', sql`${t.unitCost} >= 0`)]);
 export const cashCloses = pgTable('cash_closes', {
   id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
   businessDate: date('business_date').notNull(), openingFloat: bigint('opening_float', { mode: 'bigint' }).notNull(),

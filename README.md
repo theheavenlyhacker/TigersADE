@@ -1,6 +1,6 @@
 # Tigers café · ADE (monorepo)
 
-- `apps/web` – Next.js frontend (mock data in `lib/data.ts`)
+- `apps/web` – Next.js frontend
 - `apps/api` – NestJS backend, Clean Architecture: `domain` → `application/use-cases` (one file per use case) → `infrastructure` / `presentation`
 
     pnpm install
