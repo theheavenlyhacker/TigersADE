@@ -7,6 +7,8 @@
     pnpm dev            # web :3000, api :4000
     docker compose up   # same, containerised
 
+Full setup (database, migrations, seed accounts): see [INSTALL.md](INSTALL.md).
+
 CI: `.github/workflows/ci.yml` (typecheck, test, build, docker build).
 ## Local API and browser tests
 
