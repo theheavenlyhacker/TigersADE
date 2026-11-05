@@ -106,7 +106,10 @@ describe('API foundation (Postgres)', () => {
       const loggedIn = await login(email, 'reset-pass-14');
       expect(loggedIn.status).toBe(201);
       const userCookie = loggedIn.headers['set-cookie'][0].split(';')[0];
-      await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(200);
+      const me = await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(200);
+      expect(me.headers['set-cookie'][0]).toContain(userCookie);
+      const ownerId = (await request(app.getHttpServer()).get('/me').set('Cookie', ownerCookie).expect(200)).body.user.id;
+      await request(app.getHttpServer()).post(`/users/${ownerId}/deactivate`).set('Cookie', ownerCookie).send({}).expect(409);
       await request(app.getHttpServer()).post(`/users/${created.body.id}/deactivate`).set('Cookie', ownerCookie).send({}).expect(201);
       await request(app.getHttpServer()).get('/me').set('Cookie', userCookie).expect(401);
       const sessions = await db.execute(sql`select count(*)::int as count from sessions where user_id=${created.body.id}`);
@@ -578,10 +581,13 @@ describe('API foundation (Postgres)', () => {
   it('records, edits and deletes branch expenses, reports their share of sales, and uses them in the summary', async () => {
     const app = await createTestApp('test', new Date('2025-03-01T01:00:00+08:00'));
     const db = app.get<Db>(DB);
+    let cleanup: () => Promise<unknown> = async () => {};
     try {
       const branches = await db.execute(sql`select id, code from branches order by code`);
       const main = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'main')!;
       const annex = (branches.rows as Array<{ id: string; code: string }>).find(b => b.code === 'annex')!;
+      const annexCutoff = (await db.execute(sql`select day_cutoff from branches where id = ${annex.id}`)).rows[0].day_cutoff;
+      cleanup = () => db.execute(sql`update branches set day_cutoff = ${annexCutoff} where id = ${annex.id}`);
       await db.execute(sql`update branches set day_cutoff = '04:00' where id = ${annex.id}`);
       const category = await db.execute(sql`select id from expense_categories order by name limit 1`);
       const login = async (email: string) => {
@@ -616,7 +622,7 @@ describe('API foundation (Postgres)', () => {
       expect(BigInt(summary.body.expenses)).toBe(BigInt(beforeSummary.body.expenses) + 12345n);
       expect(summary.body).toMatchObject({ operatingContribution: (BigInt(summary.body.sales) - BigInt(summary.body.expenses)).toString() });
       await request(app.getHttpServer()).delete(`/branches/${annex.id}/expenses/${anyBranchExpense.body.id}`).set('Cookie', owner).expect(200);
-    } finally { await app.close(); }
+    } finally { await cleanup(); await app.close(); }
   });
 
   it('rejects receiving a reorder for an archived item and locks logins after repeated failures', async () => {

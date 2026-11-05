@@ -28,5 +28,10 @@ export class AuthController {
   }
 
   @Get('me') @UseGuards(AccessGuard)
-  me(@CurrentUser() current: Current) { return current; }
+  /** Reissue the cookie so its 7-day Max-Age slides with the session row. */
+  me(@CurrentUser() current: Current, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const token = sessionToken(req);
+    if (token) res.setHeader('Set-Cookie', sessionCookie(token));
+    return current;
+  }
 }
