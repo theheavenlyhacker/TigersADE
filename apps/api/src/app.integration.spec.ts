@@ -293,6 +293,7 @@ describe('API foundation (Postgres)', () => {
       const base = `/branches/${main.id}/reorder-requests`;
 
       await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '0' }).expect(422);
+      await http().post(`/branches/${randomUUID()}/reorder-requests`).set('Cookie', owner).send({ itemId: item.id, quantity: '5' }).expect(404);
       await http().post(base).set('Cookie', annexManager).send({ itemId: item.id, quantity: '5' }).expect(403);
       await http().get(base).set('Cookie', annexManager).expect(403);
       const toReceive = (await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '5.5' }).expect(201)).body;

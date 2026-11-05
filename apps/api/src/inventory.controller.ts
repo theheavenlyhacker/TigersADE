@@ -153,6 +153,8 @@ export class InventoryController {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      const branch = await client.query('select id from branches where id=$1 for key share', [branchId]);
+      if (!branch.rowCount) throw new NotFoundException();
       const created = await client.query(`insert into reorder_requests (branch_id,item_id,quantity,note,requested_by) select $1,id,$3,$4,$5 from inventory_items where id=$2 and active returning id`,
         [branchId, body.itemId, qty, body.note ?? null, actor.user.id]);
       if (!created.rowCount) throw new NotFoundException('Active inventory item not found');
