@@ -97,9 +97,20 @@ export const branchInventory = pgTable('branch_inventory', {
   branchId: uuid('branch_id').notNull().references(() => branches.id), itemId: uuid('item_id').notNull().references(() => inventoryItems.id),
   par: numeric('par', { precision: 12, scale: 3 }).notNull(),
 }, t => [primaryKey({ columns: [t.branchId, t.itemId] }), check('branch_inventory_par_nonnegative', sql`${t.par} >= 0`)]);
+export const reorderRequests = pgTable('reorder_requests', {
+  id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
+  itemId: uuid('item_id').notNull().references(() => inventoryItems.id), quantity: numeric('quantity', { precision: 12, scale: 3 }).notNull(),
+  status: text('status', { enum: ['requested', 'received', 'cancelled'] }).notNull().default('requested'), note: text('note'),
+  requestedBy: uuid('requested_by').notNull().references(() => users.id), resolvedBy: uuid('resolved_by').references(() => users.id),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [index('reorder_requests_branch_status_idx').on(t.branchId, t.status), check('reorder_requests_quantity_positive', sql`${t.quantity} > 0`),
+  check('reorder_requests_status_valid', sql`${t.status} in ('requested','received','cancelled')`),
+  check('reorder_requests_resolution_consistent', sql`(${t.status} = 'requested') = (${t.resolvedBy} is null and ${t.resolvedAt} is null)`)]);
 export const stockMovements = pgTable('stock_movements', {
   id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
   itemId: uuid('item_id').notNull().references(() => inventoryItems.id), type: text('type', { enum: ['received', 'wastage', 'adjustment', 'count'] }).notNull(),
   qtyDelta: numeric('qty_delta', { precision: 12, scale: 3 }).notNull(), note: text('note'), createdBy: uuid('created_by').notNull().references(() => users.id),
+  reorderRequestId: uuid('reorder_request_id').unique().references(() => reorderRequests.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => [index('stock_movements_branch_item_idx').on(t.branchId, t.itemId), check('stock_movements_type_valid', sql`${t.type} in ('received','wastage','adjustment','count')`)]);
+}, t => [index('stock_movements_branch_item_idx').on(t.branchId, t.itemId), check('stock_movements_type_valid', sql`${t.type} in ('received','wastage','adjustment','count')`),
+  check('stock_movements_reorder_is_received', sql`${t.reorderRequestId} is null or ${t.type} = 'received'`)]);

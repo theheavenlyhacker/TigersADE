@@ -279,6 +279,56 @@ describe('API foundation (Postgres)', () => {
     } finally { await app.close(); }
   });
 
+  it('creates branch-scoped reorder requests and receives each exactly once as a linked stock movement', async () => {
+    const app = await createTestApp('test', new Date('2026-11-04T12:00:00+08:00'));
+    try {
+      const db = app.get<Db>(DB), http = () => request(app.getHttpServer());
+      const branches = await db.execute(sql`select id,code from branches where code in ('main','annex')`);
+      const main = (branches.rows as any[]).find(b => b.code === 'main')!, annex = (branches.rows as any[]).find(b => b.code === 'annex')!;
+      const login = async (email: string) => (await http().post('/auth/login').send({ email, password: process.env.DEV_PASSWORD ?? 'tigers123' }).expect(201)).headers['set-cookie'][0].split(';')[0];
+      const owner = await login('roy@tigerscafe.ph'), manager = await login('main@tigerscafe.ph'), annexManager = await login('annex@tigerscafe.ph');
+      const item = (await http().post('/inventory-items').set('Cookie', owner).send({ name: `Reorder integration ${randomUUID()}`, unit: 'kg', unitCost: '100' }).expect(201)).body;
+      const onHand = async () => (await http().get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200)).body.find((r: { itemId: string }) => r.itemId === item.id).onHand;
+      const movements = async () => (await http().get(`/branches/${main.id}/stock-movements?itemId=${item.id}`).set('Cookie', manager).expect(200)).body;
+      const base = `/branches/${main.id}/reorder-requests`;
+
+      await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '0' }).expect(422);
+      await http().post(`/branches/${randomUUID()}/reorder-requests`).set('Cookie', owner).send({ itemId: item.id, quantity: '5' }).expect(404);
+      await http().post(base).set('Cookie', annexManager).send({ itemId: item.id, quantity: '5' }).expect(403);
+      await http().get(base).set('Cookie', annexManager).expect(403);
+      const toReceive = (await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '5.5' }).expect(201)).body;
+      const toCancel = (await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '2' }).expect(201)).body;
+      expect(toReceive).toEqual(expect.objectContaining({ branchId: main.id, itemId: item.id, quantity: '5.500', status: 'requested', movementId: null }));
+      const requested = (await http().get(`${base}?status=requested`).set('Cookie', manager).expect(200)).body.map((r: { id: string }) => r.id);
+      expect(requested).toEqual(expect.arrayContaining([toReceive.id, toCancel.id]));
+      await http().get(`${base}?status=pending`).set('Cookie', manager).expect(422);
+      expect(await onHand()).toBe('0');
+
+      await http().post(`/branches/${annex.id}/reorder-requests/${toReceive.id}/receive`).set('Cookie', annexManager).expect(404);
+      await http().post(`/branches/${annex.id}/reorder-requests/${toReceive.id}/receive`).set('Cookie', manager).expect(403);
+      const received = (await http().post(`${base}/${toReceive.id}/receive`).set('Cookie', manager).expect(201)).body;
+      expect(received).toEqual(expect.objectContaining({ status: 'received', resolvedAt: expect.any(String), movementId: expect.any(String) }));
+      expect(await movements()).toEqual([expect.objectContaining({ id: received.movementId, type: 'received', qtyDelta: '5.500', reorderRequestId: toReceive.id })]);
+      expect(await onHand()).toBe('5.500');
+
+      await http().post(`${base}/${toCancel.id}/cancel`).set('Cookie', manager).expect(201);
+      expect(await movements()).toHaveLength(1);
+      for (const id of [toReceive.id, toCancel.id]) for (const action of ['receive', 'cancel']) await http().post(`${base}/${id}/${action}`).set('Cookie', manager).expect(409);
+      expect(await movements()).toHaveLength(1);
+      expect(await onHand()).toBe('5.500');
+      for (const [status, ids] of [['requested', []], ['received', [toReceive.id]], ['cancelled', [toCancel.id]]] as const) {
+        const filtered = (await http().get(`${base}?status=${status}`).set('Cookie', manager).expect(200)).body.filter((r: { itemId: string }) => r.itemId === item.id);
+        expect(filtered.map((r: { id: string }) => r.id)).toEqual(ids);
+      }
+      const statuses = (await http().get(base).set('Cookie', manager).expect(200)).body.filter((r: { itemId: string }) => r.itemId === item.id).map((r: { id: string; status: string }) => [r.id, r.status]);
+      expect(statuses).toEqual(expect.arrayContaining([[toReceive.id, 'received'], [toCancel.id, 'cancelled']]));
+
+      const audit = await db.execute(sql`select action from activity_log where payload->'request'->>'itemId'=${item.id} order by id`);
+      expect(audit.rows.map(r => r.action)).toEqual(['reorder.requested', 'reorder.requested', 'reorder.received', 'reorder.cancelled']);
+      await http().patch(`/inventory-items/${item.id}`).set('Cookie', owner).send({ active: false }).expect(200);
+    } finally { await app.close(); }
+  });
+
   it('reports exact fixed-date figures and excludes voided sales', async () => {
     const app = await createTestApp('test', new Date('2026-04-01T12:00:00Z'));
     const fixtureSaleIds: string[] = [];
