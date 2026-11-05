@@ -14,10 +14,16 @@ test('owner scoped to a branch sees API figures in Ask AI', async ({ page }) => 
   await page.getByLabel('Branch').selectOption('main');
   await page.getByRole('button', { name: 'Ask AI about your data' }).click();
   await expect(page.getByRole('textbox', { name: 'Ask about your data' })).toBeVisible();
-  await expect.poll(async () => page.getByText(/leads with ₱/).textContent().catch(() => '')).toMatch(/leads with ₱/);
-  await page.getByPlaceholder('Ask about your data').fill('Where are expenses going?');
-  await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByText(/Total expenses are/).last()).toBeVisible();
+  // Figures load async; re-ask until the panel has them (first answer may be the loading/error fallback)
+  const ask = async (q: string, answer: RegExp) => {
+    await expect(async () => {
+      await page.getByPlaceholder('Ask about your data').fill(q);
+      await page.getByRole('button', { name: 'Send' }).click();
+      await expect(page.getByText(answer).last()).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20000 });
+  };
+  await ask('Which branch is best?', /leads with ₱/);
+  await ask('Where are expenses going?', /Total expenses are/);
 });
 
 test('manager Ask AI answers without undefined branch names', async ({ page }) => {
