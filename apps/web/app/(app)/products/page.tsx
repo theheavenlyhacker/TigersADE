@@ -1,6 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Page } from "@/components/ui";
+import { Page, Empty } from "@/components/ui";
 import { useAuth } from "@/components/Auth";
 import { peso } from "@/lib/data";
 import { Catalog, apiUrl, loadCatalog } from "@/lib/catalog";
@@ -66,6 +66,6 @@ export default function P() {
     <div className="card"><table className="w-full"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Unit cost</th><th>Units sold</th><th>Revenue</th><th>Margin</th>{owner && <th>Manage</th>}</tr></thead><tbody>{rows.map(p => {
       const margin = Number(p.price) ? Math.round((Number(p.price) - Number(p.unitCost)) / Number(p.price) * 100) : 0;
       return <tr key={p.id}><td>{p.name}</td><td>{p.categoryName}</td><td>{displayMoney(p.price)}</td><td>{displayMoney(p.unitCost)}</td><td>{sales[p.id]?.units ?? 0}</td><td>{displayMoney(sales[p.id]?.revenue ?? "0")}</td><td>{margin}%</td>{owner && <td className="flex gap-2"><input className="btn w-28" aria-label={`Price for ${p.name}`} value={prices[p.id] ?? (Number(p.price) / 100).toFixed(2)} onChange={e => setPrices({ ...prices, [p.id]: e.target.value })} /><button className="btn" onClick={() => mutate(`/products/${p.id}`, "PATCH", { price: String(Math.round(Number(prices[p.id] ?? Number(p.price) / 100) * 100)) }).catch(() => setError("Could not update price."))}>Save price</button><button className="btn" onClick={() => mutate(`/products/${p.id}`, "PATCH", { active: false }).catch(() => setError("Could not archive product."))}>Archive</button></td>}</tr>;
-    })}</tbody></table>{!rows.length && <p className="text-black/50 pt-3">No products match. Try a different search.</p>}</div>
+    })}</tbody></table>{!rows.length && catalog && (catalog.products.length ? <p className="text-black/50 pt-3">No products match. Try a different search.</p> : <Empty title="No products yet" hint={owner ? "Add a category, then your first product, using the forms above." : "The owner has not added any products yet."} />)}</div>
   </Page>;
 }

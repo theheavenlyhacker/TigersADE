@@ -36,7 +36,7 @@ Postgres (single database, single tenant)
 - No Redis, no queue, no extra services.
 - Timestamps are `timestamptz` (UTC). The business time zone is fixed: `Asia/Manila`.
 - Money is `bigint` centavos everywhere, in the API and the database. The frontend divides by 100 only for display (`peso()`).
-- Local development: Postgres in Docker Compose is published on `127.0.0.1:5433` only; `db:seed` needs `ALLOW_SEED=1`.
+- Local development: Postgres in Docker Compose is published on `127.0.0.1:5433` only; there is no seed data; `db:create-owner` makes the first branch and owner. Tests load their own data with `test:fixtures` (needs `ALLOW_TEST_FIXTURES=1`, never production).
 - Deployment target: **undecided** (Railway or Render). The current Docker Compose setup is kept, and it should run on either.
 
 ## 3. Data model

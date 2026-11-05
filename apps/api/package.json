@@ -11,7 +11,8 @@
     "test:integration": "jest --runInBand app.integration.spec.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
-    "db:seed": "ALLOW_SEED=1 tsx --env-file-if-exists=.env src/db/seed.ts"
+    "db:create-owner": "tsx --env-file-if-exists=.env src/db/create-owner.ts",
+    "test:fixtures": "ALLOW_TEST_FIXTURES=1 tsx --env-file-if-exists=.env src/test/fixtures.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

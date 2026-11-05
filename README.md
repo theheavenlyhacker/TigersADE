@@ -7,7 +7,7 @@
     pnpm dev            # web :3000, api :4000
     docker compose up   # same, containerised
 
-Full setup (database, migrations, seed accounts): see [INSTALL.md](INSTALL.md).
+Full setup (database, migrations, first owner): see [INSTALL.md](INSTALL.md).
 
 CI: `.github/workflows/ci.yml` (typecheck, test, build, docker build).
 ## Local API and browser tests
@@ -18,8 +18,10 @@ Start an isolated test database on port 5434, then run the API integration tests
 docker run -d --name tigers-ade-test-db \
   -e POSTGRES_USER=tigers -e POSTGRES_PASSWORD=tigers -e POSTGRES_DB=tigers_test \
   -p 127.0.0.1:5434:5432 postgres:17-alpine
-DATABASE_URL=postgres://tigers:tigers@localhost:5434/tigers_test pnpm test
-DATABASE_URL=postgres://tigers:tigers@localhost:5434/tigers_test pnpm --filter @tigers/web test:e2e
+export DATABASE_URL=postgres://tigers:tigers@localhost:5434/tigers_test
+pnpm --filter @tigers/api db:migrate && pnpm --filter @tigers/api test:fixtures   # test data only
+pnpm test
+pnpm --filter @tigers/web test:e2e
 docker stop tigers-ade-test-db
 ```
 

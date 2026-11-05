@@ -8,7 +8,7 @@ const seedUuid = (value: string) => {
 };
 
 async function main() {
-  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SEED !== '1') throw new Error('Refusing to seed: set ALLOW_SEED=1 (never in production)');
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_TEST_FIXTURES !== '1') throw new Error('Test fixtures are for tests only: set ALLOW_TEST_FIXTURES=1 (never in production)');
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
     const branches = [

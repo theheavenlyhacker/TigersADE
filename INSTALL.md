@@ -27,7 +27,7 @@ DATABASE_URL=postgres://tigers:tigers@localhost:5433/tigers
 ```
 
 Optional: `PORT` (default 4000), `WEB_ORIGIN` (CORS origin; default allows `http://localhost:3000` and `http://127.0.0.1:3000`),
-`DEV_PASSWORD` (seed password, default `tigers123`). The web app optionally reads
+The web app optionally reads
 `NEXT_PUBLIC_API_URL` (default: same host, port 4000).
 
 ## 3. Start the database
@@ -38,18 +38,18 @@ docker compose up -d --wait db
 
 This runs Postgres 17 on `127.0.0.1:5433` (local only) (user/password/db all `tigers`).
 
-## 4. Migrate and seed
+## 4. Migrate and create the owner
 
-Both scripts load `apps/api/.env` themselves:
+The database starts empty: there is no seed data. Both scripts load `apps/api/.env` themselves:
 
 ```sh
 cd apps/api
 pnpm db:migrate
-pnpm db:seed
+OWNER_EMAIL=you@example.com OWNER_PASSWORD='choose-a-password' pnpm db:create-owner
 cd ../..
 ```
 
-`db:seed` sets `ALLOW_SEED=1` and resets the seeded accounts' passwords, so only run it against a local database. It refuses to run when `NODE_ENV=production` or `ALLOW_SEED` is not `1`.
+This adds one branch (`BRANCH_CODE`/`BRANCH_NAME`, default `main`/`Main`) and one owner login (`OWNER_NAME` optional). Re-running changes nothing that exists. Everything else (products, staff, other users) is added in the app.
 
 ## 5. Run
 
@@ -65,19 +65,7 @@ pnpm dev
 | API | http://localhost:4000 |
 | Swagger docs | http://localhost:4000/docs (disabled when `NODE_ENV=production`) |
 
-## Seeded accounts
-
-Username is the email. Password for all: `tigers123` (or `DEV_PASSWORD`).
-
-| Email | Role |
-|---|---|
-| `roy@tigerscafe.ph` | owner |
-| `main@tigerscafe.ph` | manager (Main) |
-| `annex@tigerscafe.ph` | manager (Annex) |
-| `pacol@tigerscafe.ph` | manager (Pacol) |
-| `cashier@tigerscafe.ph` | cashier (Main branch) |
-
-In Swagger, call `POST /auth/login` first; it sets the `ade_session` cookie.
+Log in with the owner you created. In Swagger, call `POST /auth/login` first; it sets the `ade_session` cookie.
 
 ## Troubleshooting
 
