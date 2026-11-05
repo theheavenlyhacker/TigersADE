@@ -1,5 +1,5 @@
 import { DomainError } from '../../shared/domain-error';
-import { INT8_MAX } from '../../shared/sql';
+import { INT8_MAX } from '../../shared/int8';
 
 /** Expected cash = opening float + the day's cash sales; variance = counted − expected. All centavos. */
 export function reconcile(openingFloat: bigint, cashSales: bigint, countedCash: bigint) {

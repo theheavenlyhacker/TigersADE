@@ -1,5 +1,5 @@
 import { DomainError } from '../../shared/domain-error';
-import { INT8_MAX } from '../../shared/sql';
+import { INT8_MAX } from '../../shared/int8';
 
 export interface SellableProduct { id: string; name: string; price: string; unitCost: string; active: boolean }
 export interface SaleLineInput { productId: string; qty: number }

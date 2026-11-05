@@ -66,7 +66,7 @@ export class DrizzleInventoryRepository extends InventoryRepository {
   }
 
   async activeItemExists(tx: Executor, itemId: string) {
-    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true)))).length > 0;
+    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true))).for('share')).length > 0;
   }
 
   async onHand(tx: Executor, branchId: string, itemId: string) {

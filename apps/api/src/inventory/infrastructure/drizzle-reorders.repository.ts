@@ -56,7 +56,7 @@ export class DrizzleReordersRepository extends ReordersRepository {
   }
 
   async itemActive(tx: Executor, itemId: string) {
-    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true)))).length > 0;
+    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true))).for('share')).length > 0;
   }
 
   async insertReceivedMovement(tx: Executor, m: { branchId: string; itemId: string; quantity: string; createdBy: string; reorderRequestId: string }) {

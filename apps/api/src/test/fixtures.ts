@@ -9,6 +9,7 @@ const seedUuid = (value: string) => {
 
 async function main() {
   if (process.env.NODE_ENV === 'production' || process.env.ALLOW_TEST_FIXTURES !== '1') throw new Error('Test fixtures are for tests only: set ALLOW_TEST_FIXTURES=1 (never in production)');
+  if (!/@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(process.env.DATABASE_URL ?? '')) throw new Error('Test fixtures only run against a local database');
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
     const branches = [

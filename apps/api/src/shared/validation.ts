@@ -1,6 +1,6 @@
 import { ParseUUIDPipe } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import { INT8_MAX } from './sql';
+import { INT8_MAX } from './int8';
 import { IsISO8601, Matches, ValidateBy, ValidationOptions, buildMessage } from 'class-validator';
 
 

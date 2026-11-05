@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { Role } from '../../auth/domain/current-user';
 import { ActivityLog } from '../../db/activity-log';
@@ -45,6 +45,7 @@ export class UsersService {
 
   /** Deactivating ends every session the user has. */
   async deactivate(actorId: string, id: string) {
+    if (actorId === id) throw new ConflictException('You cannot deactivate your own account');
     await this.uow.run(async tx => {
       const user = await this.repo.deactivate(tx, id);
       if (!user) throw new NotFoundException();
