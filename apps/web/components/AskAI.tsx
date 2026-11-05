@@ -25,7 +25,8 @@ useEffect(()=>{if(!aiOpen||!branches?.length)return;const branch=user?.role==="o
 if(!aiOpen)return null;
 const answer=(s:string):M=>{const x=s.toLowerCase();
 if(error)return{r:"a",t:"Could not load API figures. Please reopen the panel and try again."};
-if(!figures||loading)return{r:"a",t:"Loading API figures…" };
+if(!figures)return{r:"a",t:"Could not load API figures. Please reopen the panel and try again."};
+if(loading&&!figures.comparison?.length&&!figures.summary&&!figures.best?.length)return{r:"a",t:"Loading API figures…" };
 const money=(v:any)=>peso(Number(v)/100);
 const summary=figures.summary;
 if(x.includes("best")&&x.includes("branch")||x.includes("which branch")){if(!figures.comparison?.length)return{r:"a",t:"No branch figures yet for the month."};
