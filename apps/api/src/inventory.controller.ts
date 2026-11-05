@@ -1,6 +1,6 @@
-import { Body, Controller, ForbiddenException, Get, Inject, NotFoundException, Param, Patch, Post, Put, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Put, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { Request } from 'express';
 import { DB_POOL } from './db/db.module';
 import { logActivity } from './db/activity';
@@ -19,6 +19,9 @@ const positiveMoney = (v: unknown): string | null => {
 };
 const validName = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.trim().length <= 120;
 const validUnit = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.trim().length <= 20;
+const reorderStatuses = ['pending', 'received', 'cancelled'];
+const reorderColumns = `r.id, r.branch_id as "branchId", r.item_id as "itemId", i.name as "itemName", i.unit, r.quantity::text, r.status, r.note,
+  r.requested_by as "requestedBy", r.created_at as "createdAt", r.resolved_by as "resolvedBy", r.resolved_at as "resolvedAt", sm.id as "movementId"`;
 const validNote = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.length <= 1000);
 
 @ApiTags('inventory')
@@ -104,7 +107,7 @@ export class InventoryController {
   @Get('branches/:branchId/stock-movements') @Roles('owner', 'manager')
   async movements(@Param('branchId') branchId: string, @Query('itemId') itemId?: string) {
     if (!uuid(branchId) || (itemId && !uuid(itemId))) throw new UnprocessableEntityException('Invalid branch or item');
-    return (await this.pool.query(`select sm.id, sm.branch_id as "branchId", sm.item_id as "itemId", i.name as "itemName", sm.type, sm.qty_delta::text as "qtyDelta", sm.note, sm.created_by as "createdBy", sm.created_at as "createdAt"
+    return (await this.pool.query(`select sm.id, sm.branch_id as "branchId", sm.item_id as "itemId", i.name as "itemName", sm.type, sm.qty_delta::text as "qtyDelta", sm.note, sm.created_by as "createdBy", sm.reorder_request_id as "reorderRequestId", sm.created_at as "createdAt"
       from stock_movements sm join inventory_items i on i.id=sm.item_id where sm.branch_id=$1 and ($2::uuid is null or sm.item_id=$2) order by sm.created_at desc, sm.id`, [branchId, itemId ?? null])).rows;
   }
 
@@ -133,5 +136,69 @@ export class InventoryController {
       return result.rows[0];
     } catch (error) { await client.query('rollback'); throw error; }
     finally { client.release(); }
+  }
+
+  @Get('branches/:branchId/reorder-requests') @Roles('owner', 'manager')
+  async reorderRequests(@Param('branchId') branchId: string, @Query('status') status?: string) {
+    if (!uuid(branchId) || (status !== undefined && !reorderStatuses.includes(status))) throw new UnprocessableEntityException('Invalid branch or status');
+    return (await this.pool.query(`select ${reorderColumns} from reorder_requests r join inventory_items i on i.id=r.item_id left join stock_movements sm on sm.reorder_request_id=r.id
+      where r.branch_id=$1 and ($2::text is null or r.status=$2) order by r.created_at desc, r.id`, [branchId, status ?? null])).rows;
+  }
+
+  @Post('branches/:branchId/reorder-requests') @Roles('owner', 'manager')
+  async requestReorder(@Param('branchId') branchId: string, @Body() body: Record<string, unknown>, @Req() req: Request) {
+    const qty = quantity(body?.quantity);
+    if (!uuid(branchId) || !uuid(body?.itemId) || qty === null || Number(qty) <= 0 || !validNote(body?.note)) throw new UnprocessableEntityException('itemId, positive quantity and optional note are required');
+    const actor = await this.auth.current(sessionToken(req));
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const created = await client.query(`insert into reorder_requests (branch_id,item_id,quantity,note,requested_by) select $1,id,$3,$4,$5 from inventory_items where id=$2 and active returning id`,
+        [branchId, body.itemId, qty, body.note ?? null, actor.user.id]);
+      if (!created.rowCount) throw new NotFoundException('Active inventory item not found');
+      const request = await this.reorderById(client, branchId, created.rows[0].id);
+      await logActivity(client, { branchId, actorId: actor.user.id, action: 'reorder.requested', payload: { request } });
+      await client.query('commit');
+      return request;
+    } catch (error) { await client.query('rollback'); throw error; }
+    finally { client.release(); }
+  }
+
+  @Post('branches/:branchId/reorder-requests/:requestId/receive') @Roles('owner', 'manager')
+  receiveReorder(@Param('branchId') branchId: string, @Param('requestId') requestId: string, @Req() req: Request) {
+    return this.resolveReorder(branchId, requestId, 'received', req);
+  }
+
+  @Post('branches/:branchId/reorder-requests/:requestId/cancel') @Roles('owner', 'manager')
+  cancelReorder(@Param('branchId') branchId: string, @Param('requestId') requestId: string, @Req() req: Request) {
+    return this.resolveReorder(branchId, requestId, 'cancelled', req);
+  }
+
+  private async resolveReorder(branchId: string, requestId: string, status: 'received' | 'cancelled', req: Request) {
+    if (!uuid(branchId) || !uuid(requestId)) throw new UnprocessableEntityException('Invalid branch or reorder request');
+    const actor = await this.auth.current(sessionToken(req));
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query('select item_id, quantity::text, status from reorder_requests where id=$1 and branch_id=$2 for update', [requestId, branchId]);
+      if (!current.rowCount) throw new NotFoundException('Reorder request not found');
+      if (current.rows[0].status !== 'pending') throw new ConflictException(`Reorder request is already ${current.rows[0].status}`);
+      await client.query(`update reorder_requests set status=$1, resolved_by=$2, resolved_at=now() where id=$3`, [status, actor.user.id, requestId]);
+      if (status === 'received') {
+        await client.query('select pg_advisory_xact_lock(hashtext($1),hashtext($2))', [branchId, current.rows[0].item_id]);
+        await client.query(`insert into stock_movements (branch_id,item_id,type,qty_delta,note,created_by,reorder_request_id) values ($1,$2,'received',$3,'Reorder received',$4,$5)`,
+          [branchId, current.rows[0].item_id, current.rows[0].quantity, actor.user.id, requestId]);
+      }
+      const request = await this.reorderById(client, branchId, requestId);
+      await logActivity(client, { branchId, actorId: actor.user.id, action: `reorder.${status}`, payload: { request } });
+      await client.query('commit');
+      return request;
+    } catch (error) { await client.query('rollback'); throw error; }
+    finally { client.release(); }
+  }
+
+  private async reorderById(client: PoolClient, branchId: string, requestId: string) {
+    return (await client.query(`select ${reorderColumns} from reorder_requests r join inventory_items i on i.id=r.item_id left join stock_movements sm on sm.reorder_request_id=r.id
+      where r.id=$1 and r.branch_id=$2`, [requestId, branchId])).rows[0];
   }
 }

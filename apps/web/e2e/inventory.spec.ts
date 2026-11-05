@@ -43,3 +43,29 @@ test('inventory page flags negative stock for an item with no par set', async ({
     await request.patch(`${api}/inventory-items/${item.id}`, { data: { active: false } });
   }
 });
+
+test('receiving an inventory reorder request updates stock on hand', async ({ page, request }) => {
+  const api = 'http://127.0.0.1:4000';
+  const login = await request.post(`${api}/auth/login`, { data: { email: 'roy@tigerscafe.ph', password: 'tigers123' } });
+  expect(login.ok()).toBeTruthy();
+  const main = (await (await request.get(`${api}/me`)).json()).branches.find((b: { code: string }) => b.code === 'main');
+  const name = `E2E reorder ${Date.now()}`;
+  const item = await (await request.post(`${api}/inventory-items`, { data: { name, unit: 'kg', unitCost: '100' } })).json();
+  try {
+    await page.goto('/');
+    await page.getByPlaceholder('Email').fill('main@tigerscafe.ph');
+    await page.getByPlaceholder('Password').fill('tigers123');
+    await page.getByRole('button', { name: 'Log in', exact: true }).click();
+    await page.getByRole('link', { name: 'Inventory', exact: true }).click();
+    const row = page.getByRole('row').filter({ hasText: name });
+    await row.getByRole('spinbutton', { name: `Reorder quantity for ${name} at Tigers cafe Main` }).fill('2.5');
+    await row.getByRole('button', { name: 'Reorder' }).click();
+    const pending = page.getByText(`2.500 kg ${name}`);
+    await expect(pending).toBeVisible();
+    await page.getByRole('button', { name: 'Received', exact: true }).last().click();
+    await expect(row).toContainText('2.500');
+    await expect(pending).not.toBeVisible();
+  } finally {
+    await request.patch(`${api}/inventory-items/${item.id}`, { data: { active: false } });
+  }
+});
