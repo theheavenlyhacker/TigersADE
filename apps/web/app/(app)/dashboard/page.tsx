@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/Auth";
 import { Page, Stat, Bar, Line } from "@/components/ui";
-import { peso, branches as sampleBranches, products, expenseCats } from "@/lib/data";
+import { peso } from "@/lib/data";
 import { apiUrl } from "@/lib/catalog";
 
 const centavos = (value: string) => { const parts = /^(\d{1,16})(?:\.(\d{1,2}))?$/.exec(value); if (!parts) throw new Error("Enter a non-negative amount with up to two decimal places."); return (BigInt(parts[1]) * BigInt(100) + BigInt((parts[2] ?? "").padEnd(2, "0"))).toString(); };
@@ -16,7 +16,7 @@ export default function D() {
   const [cashClose, setCashClose] = useState<any>(null), [openingFloat, setOpeningFloat] = useState(""), [countedCash, setCountedCash] = useState(""), [closeNote, setCloseNote] = useState(""), [closeError, setCloseError] = useState(""), [savingClose, setSavingClose] = useState(false);
   const cashCloseBranch = branches[0]?.id;
   const branch = user?.role === "owner" ? scope === "all" ? "all" : branches.find((b: any) => b.code === scope)?.id : branches[0]?.id;
-  const selected = user?.role === "owner" && scope === "all" ? sampleBranches : sampleBranches.filter(b => b.id === scope);
+  const selected = user?.role === "owner" && scope === "all" ? branches : branches.filter((b: any) => b.code === scope);
   const expenses = Number(summary?.expenses ?? 0) / 100;
   const peakHour = peak.reduce<any>((busiest, hour) => !busiest || Number(hour.sales) > Number(busiest.sales) ? hour : busiest, null);
 
@@ -69,7 +69,7 @@ export default function D() {
     {user.role === "owner" && <div className="card"><h2 className="font-semibold mb-2">Branch comparison</h2><table className="w-full"><thead><tr><th>Branch</th><th>Today</th><th>This week</th><th>MTD</th><th>Growth</th><th>Share</th></tr></thead><tbody>{comparison.map(b => <tr key={b.id}><td>{b.name}</td><td>{money(b.today)}</td><td>{money(b.week)}</td><td>{money(b.mtd)}</td><td>{b.growth === null ? "—" : `${Number(b.growth).toFixed(1)}%`}</td><td><Bar pct={Number(b.share)} c="bg-sage"/></td></tr>)}</tbody></table></div>}
     <div className="card"><h2 className="font-semibold">Sales trend</h2><p className="text-sm text-black/50">Daily sales; forecast average {trend ? money(trend.forecast.dailyAverage) : "—"} ± 8%</p>{values.length > 1 && <Line a={values}/>}</div>
     <div className="grid md:grid-cols-2 gap-5"><div className="card"><h2 className="font-semibold mb-2">Best sellers · this month</h2><table className="w-full"><thead><tr><th>Product</th><th>Units</th><th>Revenue</th><th>Margin</th></tr></thead><tbody>{best.slice(0, 5).map(p => <tr key={p.productId}><td>{p.name}</td><td>{p.units}</td><td>{money(p.revenue)}</td><td>{p.margin}%</td></tr>)}</tbody></table></div><div className="card"><h2 className="font-semibold">Peak hours</h2>{peak.length ? peak.map(p => <p key={p.local_hour} className="flex justify-between py-1"><span>{String(p.local_hour).padStart(2, "0")}:00</span><span>{p.customers} sales · {money(p.sales)}</span></p>) : <p className="text-sm text-black/50">No sales today yet.</p>}<Link href="/sales" className="text-brand underline">Open sales</Link></div></div>
-    <div className="card"><h2 className="font-semibold">Expense tracking</h2><div className="text-3xl font-semibold my-2">{peso(expenses)}</div>{(expenseReport?.categories ?? expenseCats.map(c => ({ categoryId: c.n, categoryName: c.n, total: "0" }))).map((c: any) => <div key={c.categoryId} className="flex justify-between py-1.5 text-sm"><span>{c.categoryName}</span><span>{peso(Number(c.total) / 100)} <span className="text-black/40">{expenses ? `${(Number(c.total) / (expenses * 100) * 100).toFixed(1)}%` : "0%"}</span></span></div>)}</div>
+    <div className="card"><h2 className="font-semibold">Expense tracking</h2><div className="text-3xl font-semibold my-2">{peso(expenses)}</div>{(expenseReport?.categories ?? []).map((c: any) => <div key={c.categoryId} className="flex justify-between py-1.5 text-sm"><span>{c.categoryName}</span><span>{peso(Number(c.total) / 100)} <span className="text-black/40">{expenses ? `${(Number(c.total) / (expenses * 100) * 100).toFixed(1)}%` : "0%"}</span></span></div>)}</div>
     <h2 className="text-xl font-semibold pt-2">Your attention, where it matters</h2><div className="grid md:grid-cols-3 gap-4"><div className="card"><b>{low.length} stock items need attention</b><p className="text-sm text-black/55 my-2">{lowLabel}</p><Link href="/inventory" className="text-brand underline">Review inventory</Link></div><div className="card"><b>{user.role === "owner" ? "Branch sales performance" : "Plan for the lunch rush"}</b><p className="text-sm text-black/55 my-2">{user.role === "owner" ? "Review current branch figures and growth." : peakHour ? `Busiest hour is ${String(peakHour.local_hour).padStart(2, "0")}:00. Keep bar and kitchen coverage aligned.` : "No sales today yet."}</p><Link href="/sales" className="text-brand underline">Open sales</Link></div><div className="card"><b>Review recent activity</b><p className="text-sm text-black/55 my-2">Voids, price changes and stock adjustments are logged.</p><Link href="/staff" className="text-brand underline">View activity</Link></div></div>
   </Page>;
 }
