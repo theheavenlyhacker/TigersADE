@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { Role } from '../../auth/domain/current-user';
 import { ActivityLog } from '../../db/activity-log';
-import { asHttp } from '../../shared/domain-error';
+import { asHttp } from '../../shared/as-http';
 import { Executor, UnitOfWork } from '../../db/unit-of-work';
 import { assertBranchAssignment, assertStaffLink } from '../domain/user-rules';
 import { UsersRepository } from './users.repository';

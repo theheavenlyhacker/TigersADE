@@ -6,9 +6,19 @@ import { AuthRepository } from './auth.repository';
 
 const dummyHash = argon2.hash('not-a-real-password');
 
-// ponytail: in-memory per-email lockout, resets on restart; use a shared store if the API runs on several instances
-const MAX_FAILURES = 5, LOCK_MS = 15 * 60_000;
-const failures = new Map<string, { count: number; since: number }>();
+// ponytail: in-memory per-email limit, resets on restart; use a shared store if the API runs on several instances
+const MAX_ATTEMPTS = 5, WINDOW_MS = 15 * 60_000;
+const attempts = new Map<string, { count: number; resetAt: number }>();
+
+/** Reserve an attempt before verifying, so parallel guesses cannot slip past the limit. Swept lazily to bound memory. */
+function reserveAttempt(key: string) {
+  const now = Date.now();
+  if (attempts.size > 1000) for (const [k, v] of attempts) if (v.resetAt <= now) attempts.delete(k);
+  let entry = attempts.get(key);
+  if (!entry || entry.resetAt <= now) attempts.set(key, entry = { count: 0, resetAt: now + WINDOW_MS });
+  if (entry.count >= MAX_ATTEMPTS) throw new HttpException('Too many login attempts; try again later', HttpStatus.TOO_MANY_REQUESTS);
+  entry.count++;
+}
 
 @Injectable()
 export class AuthService {
@@ -16,20 +26,17 @@ export class AuthService {
 
   /** Same error for an unknown email and a wrong password. */
   async login(email: string, password: string) {
-    const key = email.toLowerCase(), failed = failures.get(key);
-    if (failed && Date.now() - failed.since > LOCK_MS) failures.delete(key);
-    if ((failures.get(key)?.count ?? 0) >= MAX_FAILURES) throw new HttpException('Too many failed attempts; try again later', HttpStatus.TOO_MANY_REQUESTS);
-    try { return await this.attempt(email, password); } catch (error) {
-      if (error instanceof UnauthorizedException) failures.set(key, { count: (failures.get(key)?.count ?? 0) + 1, since: failures.get(key)?.since ?? Date.now() });
-      throw error;
-    }
+    const key = email.toLowerCase();
+    reserveAttempt(key);
+    const result = await this.attempt(email, password);
+    attempts.delete(key);
+    return result;
   }
 
   private async attempt(email: string, password: string) {
     const user = await this.repo.findActiveByEmail(email);
     if (!user) { await argon2.verify(await dummyHash, password).catch(() => false); throw new UnauthorizedException('Invalid email or password'); }
     if (!(await argon2.verify(user.passwordHash, password))) throw new UnauthorizedException('Invalid email or password');
-    failures.delete(email.toLowerCase());
     const token = newToken();
     await this.repo.createSession(hashToken(token), user.id);
     return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };

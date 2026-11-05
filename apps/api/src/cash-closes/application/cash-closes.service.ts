@@ -3,7 +3,7 @@ import { ActivityLog } from '../../db/activity-log';
 import { UnitOfWork } from '../../db/unit-of-work';
 import { businessDate as currentBusinessDate } from '../../shared/business-date';
 import { CLOCK, Clock } from '../../shared/clock';
-import { asHttp } from '../../shared/domain-error';
+import { asHttp } from '../../shared/as-http';
 import { assertDayHasStarted, reconcile } from '../domain/cash-close';
 import { CashClosesRepository } from './cash-closes.repository';
 

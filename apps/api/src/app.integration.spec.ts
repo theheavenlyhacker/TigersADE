@@ -101,6 +101,7 @@ describe('API foundation (Postgres)', () => {
       expect(oldLogin.status).toBe(201);
       await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', managerCookie).send({ password: 'reset-pass-14' }).expect(403);
       await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', ownerCookie).send({ password: 'reset-pass-14' }).expect(201);
+      await request(app.getHttpServer()).get('/me').set('Cookie', oldLogin.headers['set-cookie'][0].split(';')[0]).expect(401);
       expect((await login(email, 'initial-pass-14')).status).toBe(401);
       const loggedIn = await login(email, 'reset-pass-14');
       expect(loggedIn.status).toBe(201);
@@ -629,6 +630,8 @@ describe('API foundation (Postgres)', () => {
       const reorder = (await http().post(`/branches/${main.id}/reorder-requests`).set('Cookie', owner).send({ itemId: item.id, quantity: '1' }).expect(201)).body;
       await db.execute(sql`update inventory_items set active = false where id = ${item.id}`);
       await http().post(`/branches/${main.id}/reorder-requests/${reorder.id}/receive`).set('Cookie', owner).expect(409);
+      await db.execute(sql`delete from reorder_requests where id = ${reorder.id}`);
+      await db.execute(sql`delete from inventory_items where id = ${item.id}`);
 
       const email = `lockout-${randomUUID()}@tigerscafe.ph`;
       for (let i = 0; i < 5; i++) await http().post('/auth/login').send({ email, password: 'wrong-password' }).expect(401);

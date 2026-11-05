@@ -5,5 +5,5 @@
 ## Consequences
 
 - Business rules (business day, pricing a sale, voiding, cash reconciliation, stock movements, report windows) have unit tests that need no database; integration tests cover the HTTP behaviour.
-- `domain/` throws plain `DomainError(kind, message)` (`shared/domain-error.ts`) and never imports Nest. Application services call domain rules through `asHttp(() => rule(...))`, which maps the error to the matching Nest exception, and throw Nest exceptions directly for their own checks.
+- `domain/` throws plain `DomainError(kind, message)` (`shared/domain-error.ts`, Nest-free) and never imports Nest. Application services call domain rules through `asHttp(() => rule(...))` (`shared/as-http.ts`), which maps the error to the matching Nest exception, and throw Nest exceptions directly for their own checks.
 - Repositories read the tables they need, including other capabilities' tables (e.g. sales reads `cash_closes`). This is a modular monolith over one database; there are no cross-module service calls.

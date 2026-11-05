@@ -4,7 +4,7 @@ import { ActivityLog } from '../../db/activity-log';
 import { UnitOfWork } from '../../db/unit-of-work';
 import { businessDate } from '../../shared/business-date';
 import { CLOCK, Clock } from '../../shared/clock';
-import { asHttp } from '../../shared/domain-error';
+import { asHttp } from '../../shared/as-http';
 import { SaleLineInput, assertCanVoid, priceSale } from '../domain/sale';
 import { SalesRepository } from './sales.repository';
 

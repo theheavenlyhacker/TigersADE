@@ -124,7 +124,7 @@ These rules are enforced in one place: a guard checks the role and checks `:bran
 
 **Activity log.** It is written in the same transaction as the change, through one shared helper. Actions: `price.changed`, `product.created`, `product.archived`, `sale.voided`, `stock.moved`, `reorder.requested`, `reorder.received`, `expense.created`, `expense.updated`, `expense.deleted`, `cash_close.submitted`, `branch.target_changed`, `branch.cutoff_changed`, `user.created`, `user.deactivated`. The payload carries before and after values where they apply.
 
-**Sessions.** A random 32-byte token sits in an `httpOnly`, `SameSite=Lax` cookie (`Secure` too when `NODE_ENV=production`, since local development runs over plain HTTP), and only its SHA-256 hash is stored. Sessions last 7 days and extend on each use. Logging out, deactivating a user or resetting their password deletes their sessions. Five failed logins for an email lock it for 15 minutes. Passwords are hashed with argon2id. The login endpoint gives the same error for an unknown email and a wrong password.
+**Sessions.** A random 32-byte token sits in an `httpOnly`, `SameSite=Lax` cookie (`Secure` too when `NODE_ENV=production`, since local development runs over plain HTTP), and only its SHA-256 hash is stored. Sessions last 7 days and extend on each use. Logging out, deactivating a user or resetting their password deletes their sessions. An email gets 5 login attempts per 15-minute window; further attempts get `429` until the window ends, and a successful login clears the count. Passwords are hashed with argon2id. The login endpoint gives the same error for an unknown email and a wrong password.
 
 ## 6. Catalog caching
 
