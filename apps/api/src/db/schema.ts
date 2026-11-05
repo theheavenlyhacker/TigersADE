@@ -100,12 +100,12 @@ export const branchInventory = pgTable('branch_inventory', {
 export const reorderRequests = pgTable('reorder_requests', {
   id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
   itemId: uuid('item_id').notNull().references(() => inventoryItems.id), quantity: numeric('quantity', { precision: 12, scale: 3 }).notNull(),
-  status: text('status', { enum: ['pending', 'received', 'cancelled'] }).notNull().default('pending'), note: text('note'),
+  status: text('status', { enum: ['requested', 'received', 'cancelled'] }).notNull().default('requested'), note: text('note'),
   requestedBy: uuid('requested_by').notNull().references(() => users.id), resolvedBy: uuid('resolved_by').references(() => users.id),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('reorder_requests_branch_status_idx').on(t.branchId, t.status), check('reorder_requests_quantity_positive', sql`${t.quantity} > 0`),
-  check('reorder_requests_status_valid', sql`${t.status} in ('pending','received','cancelled')`),
-  check('reorder_requests_resolution_consistent', sql`(${t.status} = 'pending') = (${t.resolvedBy} is null and ${t.resolvedAt} is null)`)]);
+  check('reorder_requests_status_valid', sql`${t.status} in ('requested','received','cancelled')`),
+  check('reorder_requests_resolution_consistent', sql`(${t.status} = 'requested') = (${t.resolvedBy} is null and ${t.resolvedAt} is null)`)]);
 export const stockMovements = pgTable('stock_movements', {
   id: uuid('id').defaultRandom().primaryKey(), branchId: uuid('branch_id').notNull().references(() => branches.id),
   itemId: uuid('item_id').notNull().references(() => inventoryItems.id), type: text('type', { enum: ['received', 'wastage', 'adjustment', 'count'] }).notNull(),

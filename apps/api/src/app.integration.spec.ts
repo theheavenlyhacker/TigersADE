@@ -297,9 +297,10 @@ describe('API foundation (Postgres)', () => {
       await http().get(base).set('Cookie', annexManager).expect(403);
       const toReceive = (await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '5.5' }).expect(201)).body;
       const toCancel = (await http().post(base).set('Cookie', manager).send({ itemId: item.id, quantity: '2' }).expect(201)).body;
-      expect(toReceive).toEqual(expect.objectContaining({ branchId: main.id, itemId: item.id, quantity: '5.500', status: 'pending', movementId: null }));
-      const pending = (await http().get(`${base}?status=pending`).set('Cookie', manager).expect(200)).body.map((r: { id: string }) => r.id);
-      expect(pending).toEqual(expect.arrayContaining([toReceive.id, toCancel.id]));
+      expect(toReceive).toEqual(expect.objectContaining({ branchId: main.id, itemId: item.id, quantity: '5.500', status: 'requested', movementId: null }));
+      const requested = (await http().get(`${base}?status=requested`).set('Cookie', manager).expect(200)).body.map((r: { id: string }) => r.id);
+      expect(requested).toEqual(expect.arrayContaining([toReceive.id, toCancel.id]));
+      await http().get(`${base}?status=pending`).set('Cookie', manager).expect(422);
       expect(await onHand()).toBe('0');
 
       await http().post(`/branches/${annex.id}/reorder-requests/${toReceive.id}/receive`).set('Cookie', annexManager).expect(404);
@@ -314,6 +315,10 @@ describe('API foundation (Postgres)', () => {
       for (const id of [toReceive.id, toCancel.id]) for (const action of ['receive', 'cancel']) await http().post(`${base}/${id}/${action}`).set('Cookie', manager).expect(409);
       expect(await movements()).toHaveLength(1);
       expect(await onHand()).toBe('5.500');
+      for (const [status, ids] of [['requested', []], ['received', [toReceive.id]], ['cancelled', [toCancel.id]]] as const) {
+        const filtered = (await http().get(`${base}?status=${status}`).set('Cookie', manager).expect(200)).body.filter((r: { itemId: string }) => r.itemId === item.id);
+        expect(filtered.map((r: { id: string }) => r.id)).toEqual(ids);
+      }
       const statuses = (await http().get(base).set('Cookie', manager).expect(200)).body.filter((r: { itemId: string }) => r.itemId === item.id).map((r: { id: string; status: string }) => [r.id, r.status]);
       expect(statuses).toEqual(expect.arrayContaining([[toReceive.id, 'received'], [toCancel.id, 'cancelled']]));
 

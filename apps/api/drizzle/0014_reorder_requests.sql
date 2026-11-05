@@ -3,15 +3,15 @@ CREATE TABLE "reorder_requests" (
 	"branch_id" uuid NOT NULL,
 	"item_id" uuid NOT NULL,
 	"quantity" numeric(12, 3) NOT NULL,
-	"status" text DEFAULT 'pending' NOT NULL,
+	"status" text DEFAULT 'requested' NOT NULL,
 	"note" text,
 	"requested_by" uuid NOT NULL,
 	"resolved_by" uuid,
 	"resolved_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "reorder_requests_quantity_positive" CHECK ("reorder_requests"."quantity" > 0),
-	CONSTRAINT "reorder_requests_status_valid" CHECK ("reorder_requests"."status" in ('pending','received','cancelled')),
-	CONSTRAINT "reorder_requests_resolution_consistent" CHECK (("reorder_requests"."status" = 'pending') = ("reorder_requests"."resolved_by" is null and "reorder_requests"."resolved_at" is null))
+	CONSTRAINT "reorder_requests_status_valid" CHECK ("reorder_requests"."status" in ('requested','received','cancelled')),
+	CONSTRAINT "reorder_requests_resolution_consistent" CHECK (("reorder_requests"."status" = 'requested') = ("reorder_requests"."resolved_by" is null and "reorder_requests"."resolved_at" is null))
 );
 --> statement-breakpoint
 ALTER TABLE "stock_movements" ADD COLUMN "reorder_request_id" uuid;--> statement-breakpoint

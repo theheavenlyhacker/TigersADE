@@ -18,7 +18,7 @@ export default function InventoryPage() {
       const results = await Promise.all(branches.map(async (branch: any) => {
         const response = await fetch(`${api()}/branches/${branch.id}/inventory`, { credentials: "include" });
         if (!response.ok) throw new Error("Inventory could not be loaded.");
-        const requests = await fetch(`${api()}/branches/${branch.id}/reorder-requests?status=pending`, { credentials: "include" });
+        const requests = await fetch(`${api()}/branches/${branch.id}/reorder-requests?status=requested`, { credentials: "include" });
         if (!requests.ok) throw new Error("Reorder requests could not be loaded.");
         return { rows: (await response.json()).map((row: any) => ({ ...row, branchId: branch.id, branchName: branch.name })), reorders: await requests.json() };
       }));

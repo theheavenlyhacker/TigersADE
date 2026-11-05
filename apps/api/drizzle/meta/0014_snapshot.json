@@ -787,7 +787,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'pending'"
+          "default": "'requested'"
         },
         "note": {
           "name": "note",
@@ -908,11 +908,11 @@
         },
         "reorder_requests_status_valid": {
           "name": "reorder_requests_status_valid",
-          "value": "\"reorder_requests\".\"status\" in ('pending','received','cancelled')"
+          "value": "\"reorder_requests\".\"status\" in ('requested','received','cancelled')"
         },
         "reorder_requests_resolution_consistent": {
           "name": "reorder_requests_resolution_consistent",
-          "value": "(\"reorder_requests\".\"status\" = 'pending') = (\"reorder_requests\".\"resolved_by\" is null and \"reorder_requests\".\"resolved_at\" is null)"
+          "value": "(\"reorder_requests\".\"status\" = 'requested') = (\"reorder_requests\".\"resolved_by\" is null and \"reorder_requests\".\"resolved_at\" is null)"
         }
       },
       "isRLSEnabled": false

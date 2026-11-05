@@ -19,7 +19,7 @@ const positiveMoney = (v: unknown): string | null => {
 };
 const validName = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.trim().length <= 120;
 const validUnit = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.trim().length <= 20;
-const reorderStatuses = ['pending', 'received', 'cancelled'];
+const reorderStatuses = ['requested', 'received', 'cancelled'];
 const reorderColumns = `r.id, r.branch_id as "branchId", r.item_id as "itemId", i.name as "itemName", i.unit, r.quantity::text, r.status, r.note,
   r.requested_by as "requestedBy", r.created_at as "createdAt", r.resolved_by as "resolvedBy", r.resolved_at as "resolvedAt", sm.id as "movementId"`;
 const validNote = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.length <= 1000);
@@ -182,7 +182,7 @@ export class InventoryController {
       await client.query('begin');
       const current = await client.query('select item_id, quantity::text, status from reorder_requests where id=$1 and branch_id=$2 for update', [requestId, branchId]);
       if (!current.rowCount) throw new NotFoundException('Reorder request not found');
-      if (current.rows[0].status !== 'pending') throw new ConflictException(`Reorder request is already ${current.rows[0].status}`);
+      if (current.rows[0].status !== 'requested') throw new ConflictException(`Reorder request is already ${current.rows[0].status}`);
       await client.query(`update reorder_requests set status=$1, resolved_by=$2, resolved_at=now() where id=$3`, [status, actor.user.id, requestId]);
       if (status === 'received') {
         await client.query('select pg_advisory_xact_lock(hashtext($1),hashtext($2))', [branchId, current.rows[0].item_id]);
