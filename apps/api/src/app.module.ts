@@ -1,44 +1,27 @@
-import { CallHandler, ExecutionContext, HttpStatus, Injectable, MiddlewareConsumer, Module, NestInterceptor, NestModule, RequestMethod, ValidationPipe } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
-import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
-import { NextFunction, Request, Response } from 'express';
-import { Pool } from 'pg';
-import { mergeMap } from 'rxjs';
-import { DB_POOL, DbModule } from './db/db.module';
-import { CLOCK, SystemClock } from './clock';
+import { HttpStatus, Module, ValidationPipe } from '@nestjs/common';
+import { APP_PIPE } from '@nestjs/core';
+import { ActivityModule } from './activity/activity.module';
 import { AuthModule } from './auth/auth.module';
-import { catalogVersion } from './catalog-version';
+import { BranchesModule } from './branches/branches.module';
+import { CashClosesModule } from './cash-closes/cash-closes.module';
+import { CatalogModule } from './catalog/catalog.module';
+import { DbModule } from './db/db.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { ReportsModule } from './reports/reports.module';
+import { SalesModule } from './sales/sales.module';
+import { SharedModule } from './shared/shared.module';
+import { StaffModule } from './staff/staff.module';
+import { UsersModule } from './users/users.module';
 
-@Injectable()
-class CatalogVersionHeader {
-  constructor(@Inject(DB_POOL) private readonly pool: Pool) {}
-  async use(_req: Request, res: Response, next: NextFunction) {
-    const version = await catalogVersion(this.pool);
-    res.locals.catalogVersion = version;
-    res.setHeader('X-Catalog-Version', version);
-    next();
-  }
-}
-
-@Injectable()
-class CatalogVersionInterceptor implements NestInterceptor {
-  constructor(@Inject(DB_POOL) private readonly pool: Pool) {}
-  intercept(context: ExecutionContext, next: CallHandler) {
-    const res = context.switchToHttp().getResponse<Response>();
-    return next.handle().pipe(mergeMap(async value => {
-      res.setHeader('X-Catalog-Version', await catalogVersion(this.pool));
-      return value;
-    }));
-  }
-}
+/** Bodies and queries are validated against DTOs at the boundary; anything invalid is a 422. */
+const validation = () => new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY });
 
 @Module({
-  imports: [DbModule, AuthModule],
-  providers: [{ provide: CLOCK, useClass: SystemClock }, { provide: APP_INTERCEPTOR, useClass: CatalogVersionInterceptor }, { provide: APP_PIPE, useFactory: () => new ValidationPipe({ transform: true, errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }) }],
-  exports: [CLOCK],
+  imports: [
+    SharedModule, DbModule, AuthModule, BranchesModule, CatalogModule, SalesModule, CashClosesModule, ExpensesModule,
+    InventoryModule, StaffModule, UsersModule, ActivityModule, ReportsModule,
+  ],
+  providers: [{ provide: APP_PIPE, useFactory: validation }],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CatalogVersionHeader).forRoutes({ path: '*', method: RequestMethod.ALL });
-  }
-}
+export class AppModule {}

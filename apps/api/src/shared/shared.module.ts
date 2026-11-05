@@ -1,0 +1,7 @@
+import { Global, Module } from '@nestjs/common';
+import { CLOCK, SystemClock } from './clock';
+
+/** The one injectable clock; tests override CLOCK to pin "now". */
+@Global()
+@Module({ providers: [{ provide: CLOCK, useClass: SystemClock }], exports: [CLOCK] })
+export class SharedModule {}

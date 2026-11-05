@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { sql } from 'drizzle-orm';
 import { AppModule } from './app.module';
-import { CLOCK } from './clock';
+import { CLOCK } from './shared/clock';
 import { DB, Db } from './db/db.module';
 import { setupApiDocs } from './main';
 
