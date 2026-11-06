@@ -37,9 +37,11 @@ export class UsersService {
     await this.uow.run(async tx => {
       await this.checkStaffLink(tx, input.role, branchIds, input.staffMemberId);
       const staff = { set: input.staffMemberId !== undefined, staffMemberId: input.staffMemberId || null };
-      if (!(await this.repo.updateRole(tx, id, input.role, staff))) throw new NotFoundException();
+      const before = await this.repo.current(tx, id);
+      if (!before) throw new NotFoundException();
+      await this.repo.updateRole(tx, id, input.role, staff);
       await this.repo.replaceBranches(tx, id, branchIds);
-      await this.activity.record(tx, { branchId: null, actorId, action: 'user.role_changed', payload: { userId: id, role: input.role, branchIds } });
+      await this.activity.record(tx, { branchId: null, actorId, action: 'user.role_changed', payload: { userId: id, before, after: { role: input.role, branchIds: [...branchIds].sort() } } });
     });
     return { id, role: input.role, branchIds: input.branchIds };
   }

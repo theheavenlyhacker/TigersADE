@@ -4,7 +4,8 @@ import { DB, Db } from '../../db/db.module';
 import { branchInventory, inventoryItems, stockMovements } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
 import { orConflict } from '../../shared/pg-error';
-import { asText, lockActiveItem } from '../../shared/sql';
+import { asText } from '../../shared/sql';
+import { lockActiveItem } from './active-item';
 import { InventoryRepository, ItemView } from '../application/inventory.repository';
 
 const itemView = { id: inventoryItems.id, name: inventoryItems.name, unit: inventoryItems.unit, unitCost: asText(inventoryItems.unitCost), active: inventoryItems.active };

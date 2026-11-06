@@ -7,12 +7,16 @@ import { CLOCK } from './shared/clock';
 import { DB, Db } from './db/db.module';
 import { setupApiDocs } from './main';
 
-/** Removes the sales (and their audit rows) a test created, by real creation time, so repeated runs don't accumulate data. */
-async function removeSalesSince(db: Db, since: Date) {
+/**
+ * Removes the sales (and their audit rows) a test created: rows made since the test started, on the business
+ * dates its fake clock used, so fixture data and other writers are left alone.
+ */
+async function removeSalesSince(db: Db, since: Date, businessDates: string[]) {
   const at = since.toISOString();
-  await db.execute(sql`delete from activity_log where payload->>'saleId' in (select id::text from sales where created_at >= ${at}::timestamptz) or (action = 'cash_close.submitted' and created_at >= ${at}::timestamptz)`);
-  await db.execute(sql`delete from sale_lines where sale_id in (select id from sales where created_at >= ${at}::timestamptz)`);
-  await db.execute(sql`delete from sales where created_at >= ${at}::timestamptz`);
+  const mine = sql`select id from sales where created_at >= ${at}::timestamptz and business_date = any(${sql.param(businessDates)}::date[])`;
+  await db.execute(sql`delete from activity_log where payload->>'saleId' in (select id::text from (${mine}) s)`);
+  await db.execute(sql`delete from sale_lines where sale_id in (${mine})`);
+  await db.execute(sql`delete from sales where id in (${mine})`);
 }
 
 describe('API foundation (Postgres)', () => {
@@ -271,6 +275,8 @@ describe('API foundation (Postgres)', () => {
       await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: created.body.id, type: 'received', quantity: '5' }).expect(201);
       const count = await request(app.getHttpServer()).post(`/branches/${main.id}/stock-movements`).set('Cookie', manager).send({ itemId: created.body.id, type: 'count', quantity: '2' }).expect(201);
       expect(count.body.qtyDelta).toBe('-3.000');
+      const audited = await db.execute(sql`select action from activity_log where branch_id = ${main.id} and (payload->'movement'->>'itemId' = ${created.body.id} or payload->>'itemId' = ${created.body.id})`);
+      expect(audited.rows.map(r => r.action)).toEqual(expect.arrayContaining(['stock.moved', 'inventory.par_set']));
       await request(app.getHttpServer()).get(`/branches/${annex.id}/inventory`).set('Cookie', manager).expect(403);
       let stock = await request(app.getHttpServer()).get(`/branches/${main.id}/inventory`).set('Cookie', manager).expect(200);
       expect(stock.body).toContainEqual(expect.objectContaining({ itemId: created.body.id, onHand: '2.000', par: '4.000', lowStock: true, value: '6000' }));
@@ -503,7 +509,7 @@ describe('API foundation (Postgres)', () => {
     } finally {
       if (archivedProductId) await db.execute(sql`update products set active = true where id = ${archivedProductId}`);
       if (branchId) await db.execute(sql`update branches set day_cutoff = ${originalCutoff} where id = ${branchId}`);
-      try { await removeSalesSince(db, startedAt); } finally { await app.close(); }
+      try { await removeSalesSince(db, startedAt, ['2026-11-03', '2026-11-04']); } finally { await app.close(); }
     }
   });
 
@@ -543,7 +549,7 @@ describe('API foundation (Postgres)', () => {
       const listing = await request(app.getHttpServer()).get(`/branches/${branchId}/sales?from=2026-11-04&to=2026-11-04`).set('Cookie', manager).expect(200);
       expect(listing.body.find((sale: { id: string }) => sale.id === todaySale.id)).toMatchObject({ voidedBy: activity.rows[0].actor_id, voidReason: 'wrong item' });
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${previousDaySale.id}/void`).set('Cookie', manager).send({ reason: 'manager correction' }).expect(201);
-    } finally { try { await removeSalesSince(db, startedAt); } finally { await app.close(); } }
+    } finally { try { await removeSalesSince(db, startedAt, ['2026-11-03', '2026-11-04']); } finally { await app.close(); } }
   });
 
   it('previews and submits an immutable cash close that blocks sales and voids', async () => {
@@ -587,8 +593,9 @@ describe('API foundation (Postgres)', () => {
       expect(audit.rows[0].actor_id).toBe((await db.execute(sql`select user_id from sessions where token_hash = ${createHash('sha256').update(manager.slice('ade_session='.length)).digest('hex')}`)).rows[0].user_id);
     } finally {
       try {
+        await db.execute(sql`delete from activity_log where action = 'cash_close.submitted' and created_at >= ${startedAt.toISOString()}::timestamptz and payload::text like '%2030-01-15%'`);
         await db.execute(sql`delete from cash_closes where business_date = '2030-01-15'`);
-        await removeSalesSince(db, startedAt);
+        await removeSalesSince(db, startedAt, ['2030-01-15']);
       } finally { await app.close(); }
     }
   });

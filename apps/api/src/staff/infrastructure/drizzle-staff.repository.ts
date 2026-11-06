@@ -2,7 +2,7 @@ import { ConflictException, Inject, Injectable, UnprocessableEntityException } f
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { staffMembers } from '../../db/schema';
-import { FOREIGN_KEY_VIOLATION, UNIQUE_VIOLATION, pgCode } from '../../shared/pg-error';
+import { translatePgWrite } from '../../shared/pg-error';
 import { StaffFields, StaffRepository } from '../application/staff.repository';
 
 const view = {
@@ -10,12 +10,7 @@ const view = {
   shiftStart: sql<string>`to_char(${staffMembers.shiftStart}, 'HH24:MI')`, shiftEnd: sql<string>`to_char(${staffMembers.shiftEnd}, 'HH24:MI')`,
 };
 
-function translate(error: unknown): never {
-  const code = pgCode(error);
-  if (code === UNIQUE_VIOLATION) throw new ConflictException('A record with this name already exists');
-  if (code === FOREIGN_KEY_VIOLATION) throw new UnprocessableEntityException('Referenced record does not exist');
-  throw error;
-}
+const translate = (error: unknown) => translatePgWrite(error, 'A record with this name already exists');
 
 @Injectable()
 export class DrizzleStaffRepository extends StaffRepository {

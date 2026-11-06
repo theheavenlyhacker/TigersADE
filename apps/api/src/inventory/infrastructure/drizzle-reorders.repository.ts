@@ -3,7 +3,8 @@ import { and, desc, asc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { inventoryItems, reorderRequests, stockMovements } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
-import { asText, lockActiveItem } from '../../shared/sql';
+import { asText } from '../../shared/sql';
+import { lockActiveItem } from './active-item';
 import { ReorderStatus, ReordersRepository } from '../application/reorders.repository';
 
 const view = {

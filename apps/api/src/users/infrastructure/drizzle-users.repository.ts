@@ -3,17 +3,12 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { sessions, staffMembers, userBranches, users } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
-import { FOREIGN_KEY_VIOLATION, UNIQUE_VIOLATION, pgCode } from '../../shared/pg-error';
+import { translatePgWrite } from '../../shared/pg-error';
 import { NewUser, UsersRepository } from '../application/users.repository';
 
 const view = { id: users.id, email: users.email, name: users.name, role: users.role, active: users.active, staffMemberId: users.staffMemberId };
 
-function translate(error: unknown): never {
-  const code = pgCode(error);
-  if (code === UNIQUE_VIOLATION) throw new ConflictException('Email already exists');
-  if (code === FOREIGN_KEY_VIOLATION) throw new UnprocessableEntityException('Referenced record does not exist');
-  throw error;
-}
+const translate = (error: unknown) => translatePgWrite(error, 'Email already exists');
 
 @Injectable()
 export class DrizzleUsersRepository extends UsersRepository {
@@ -39,6 +34,13 @@ export class DrizzleUsersRepository extends UsersRepository {
       await tx.delete(userBranches).where(eq(userBranches.userId, userId));
       if (branchIds.length) await tx.insert(userBranches).values(branchIds.map(branchId => ({ userId, branchId })));
     } catch (error) { translate(error); }
+  }
+
+  async current(tx: Executor, id: string) {
+    const [user] = await tx.select({ role: users.role }).from(users).where(eq(users.id, id)).for('update');
+    if (!user) return null;
+    const rows = await tx.select({ branchId: userBranches.branchId }).from(userBranches).where(eq(userBranches.userId, id));
+    return { role: user.role, branchIds: rows.map(r => r.branchId).sort() };
   }
 
   async updateRole(tx: Executor, id: string, role: 'owner' | 'manager' | 'cashier', staff: { set: boolean; staffMemberId: string | null }) {

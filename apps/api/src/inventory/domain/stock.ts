@@ -20,6 +20,11 @@ export function movementDelta(type: MovementType, quantity: string, onHand: stri
   return text(qty);
 }
 
+/** A reorder asks for a positive quantity (spec §5). */
+export function assertPositiveQuantity(quantity: string) {
+  if (milli(quantity) <= 0n) throw new DomainError('invalid', 'quantity must be positive');
+}
+
 /** Low stock means on hand is below the branch's par level; an item with no par is never "low". */
 export const isLowStock = (onHand: string, par: string | null) => par !== null && milli(onHand) < milli(par);
 export const isNegativeStock = (onHand: string) => milli(onHand) < 0n;
