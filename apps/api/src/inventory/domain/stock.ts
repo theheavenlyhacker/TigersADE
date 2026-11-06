@@ -20,7 +20,7 @@ export function movementDelta(type: MovementType, quantity: string, onHand: stri
   return text(qty);
 }
 
-/** A reorder asks for a positive quantity (spec §5). */
+/** A reorder request must ask for more than zero. */
 export function assertPositiveQuantity(quantity: string) {
   if (milli(quantity) <= 0n) throw new DomainError('invalid', 'quantity must be positive');
 }

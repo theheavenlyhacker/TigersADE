@@ -39,9 +39,13 @@ export class UsersService {
       const staff = { set: input.staffMemberId !== undefined, staffMemberId: input.staffMemberId || null };
       const before = await this.repo.current(tx, id);
       if (!before) throw new NotFoundException();
+      if (actorId === id && input.role !== before.role) throw new ConflictException('You cannot change your own role');
       await this.repo.updateRole(tx, id, input.role, staff);
       await this.repo.replaceBranches(tx, id, branchIds);
-      await this.activity.record(tx, { branchId: null, actorId, action: 'user.role_changed', payload: { userId: id, before, after: { role: input.role, branchIds: [...branchIds].sort() } } });
+      const after = { role: input.role, branchIds: [...branchIds].sort() };
+      if (after.role !== before.role || after.branchIds.join() !== before.branchIds.join()) {
+        await this.activity.record(tx, { branchId: null, actorId, action: 'user.role_changed', payload: { userId: id, before, after } });
+      }
     });
     return { id, role: input.role, branchIds: input.branchIds };
   }

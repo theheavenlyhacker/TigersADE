@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { sessions, staffMembers, userBranches, users } from '../../db/schema';
@@ -37,7 +37,7 @@ export class DrizzleUsersRepository extends UsersRepository {
   }
 
   async current(tx: Executor, id: string) {
-    const [user] = await tx.select({ role: users.role }).from(users).where(eq(users.id, id)).for('update');
+    const [user] = await tx.select({ role: users.role }).from(users).where(eq(users.id, id)).for('no key update'); // not 'update': that would block FK key-share locks taken by sales and user_branches inserts
     if (!user) return null;
     const rows = await tx.select({ branchId: userBranches.branchId }).from(userBranches).where(eq(userBranches.userId, id));
     return { role: user.role, branchIds: rows.map(r => r.branchId).sort() };
@@ -45,9 +45,8 @@ export class DrizzleUsersRepository extends UsersRepository {
 
   async updateRole(tx: Executor, id: string, role: 'owner' | 'manager' | 'cashier', staff: { set: boolean; staffMemberId: string | null }) {
     try {
-      const rows = await tx.update(users).set(staff.set ? { role, staffMemberId: staff.staffMemberId } : { role }).where(eq(users.id, id)).returning({ id: users.id });
-      return rows.length > 0;
-    } catch (error) { return translate(error); }
+      await tx.update(users).set(staff.set ? { role, staffMemberId: staff.staffMemberId } : { role }).where(eq(users.id, id));
+    } catch (error) { translate(error); }
   }
 
   async deactivate(tx: Executor, id: string) {
