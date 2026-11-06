@@ -1,0 +1,3 @@
+# The business day is set on each sale when it is recorded, from a per-branch cutoff
+
+Each branch has its own changeable day cutoff (Asia/Manila time; only the owner can change it). When a sale is recorded, its `business_date` is calculated from the branch's current cutoff and stored on the sale. It is never recalculated later. Changing a cutoff therefore affects only future sales, and closed business days (cash closes, past reports) never move. The alternative, deriving the business day from `created_at` at query time, would make a cutoff change silently move past sales between days and break cash closes that are already submitted.

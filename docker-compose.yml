@@ -1,0 +1,29 @@
+name: tigers-ade
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tigers
+      POSTGRES_PASSWORD: tigers
+      POSTGRES_DB: tigers
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tigers"]
+      interval: 3s
+      retries: 10
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    environment:
+      PORT: 4000
+      WEB_ORIGIN: http://localhost:3000
+      DATABASE_URL: postgres://tigers:tigers@db:5432/tigers
+    ports: ["4000:4000"]
+    depends_on:
+      db: { condition: service_healthy }
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes:
+  pgdata:

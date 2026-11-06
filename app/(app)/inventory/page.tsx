@@ -1,6 +1,0 @@
-"use client";
-import {useState} from "react";import {useAuth} from "@/components/Auth";import {Page,Bar} from "@/components/ui";import {inventory,bname} from "@/lib/data";
-export default function I(){const {list}=useAuth();const [low,setLow]=useState(false);const [req,setReq]=useState<string[]>([]);if(!list)return null;
-const ids=list.map((b:any)=>b.id);const rows=inventory.filter(i=>ids.includes(i.branch)&&(!low||i.qty<i.par));
-return <Page title="Inventory" sub="Stock levels and reorders." action={<button className="btn" onClick={()=>setLow(!low)}>{low?"Show all items":"Show low stock only"}</button>}>
-<div className="card"><table className="w-full"><thead><tr><th>Item</th><th>Branch</th><th>On hand</th><th>Level</th><th></th></tr></thead><tbody>{rows.map(i=>{const k=i.item+i.branch;const isLow=i.qty<i.par;return <tr key={k}><td>{i.item}</td><td>{bname(i.branch)}</td><td>{i.qty} / {i.par}</td><td className="w-40"><Bar pct={i.qty/i.par*100} c={isLow?"bg-red-600":"bg-sage"}/></td><td>{isLow&&(req.includes(k)?<span className="text-sage">Reorder requested</span>:<button className="btn" onClick={()=>setReq([...req,k])}>Reorder {i.par*2-i.qty}</button>)}</td></tr>})}</tbody></table></div></Page>}

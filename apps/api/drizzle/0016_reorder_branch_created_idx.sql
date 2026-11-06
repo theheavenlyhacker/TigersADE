@@ -1,0 +1,1 @@
+CREATE INDEX "reorder_requests_branch_created_idx" ON "reorder_requests" USING btree ("branch_id","created_at" DESC NULLS LAST);

@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+allowBuilds:
+  "@nestjs/core": false
+  argon2: true
+  esbuild: false
