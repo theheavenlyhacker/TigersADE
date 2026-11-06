@@ -8,6 +8,7 @@ async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
     await pool.query('insert into branches (code, name) values ($1, $2) on conflict (code) do nothing', [BRANCH_CODE, BRANCH_NAME]);
+    await pool.query(`insert into expense_categories (name) select unnest($1::text[]) on conflict (name) do nothing`, [['Ingredients and supplies', 'Payroll', 'Rent', 'Utilities', 'Other']]);
     const hash = await argon2.hash(OWNER_PASSWORD, { type: argon2.argon2id });
     const created = await pool.query(`insert into users (email, password_hash, name, role) values ($1, $2, $3, 'owner') on conflict (lower(email)) do nothing returning id`, [OWNER_EMAIL, hash, OWNER_NAME]);
     console.log(created.rowCount ? `Created owner ${OWNER_EMAIL}` : `${OWNER_EMAIL} already exists; nothing changed`);

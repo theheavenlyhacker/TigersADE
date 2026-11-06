@@ -189,7 +189,7 @@ Each slice includes the API endpoints, migrations and tests, and switches its fr
 
 | # | Slice | Blocked by | Done when |
 |---|---|---|---|
-| 1 | Schema, migrations and seed | — | The boilerplate `branches` table and `0000` migration are removed; every table in §3 is migrated; the seed loads the `lib/data.ts` people, products, inventory and staff (dev password `tigers123`) plus about 60 business days of generated sales |
+| 1 | Schema and migrations | — | The boilerplate `branches` table and `0000` migration are removed; every table in §3 is migrated; there is no seed data (see §2); `db:create-owner` creates the first branch, the owner and the default expense categories |
 | 2 | Auth and access | 1 | Login, logout and `/me` work; the role and branch guard is in place; the activity-log helper exists; the login page uses the API, and `Auth.tsx` gets its user and branches from `/me` |
 | 3 | Branch settings | 2 | The owner can set the daily target and cutoff; both changes are logged |
 | 4 | Catalog | 2 | Product and category create, edit and archive work; `GET /catalog` and the version header work; the browser cache works as in §6; the Products page uses the API |
