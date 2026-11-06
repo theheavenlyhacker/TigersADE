@@ -31,7 +31,7 @@ export class UsersService {
     });
   }
 
-  async change(id: string, input: ChangeUser) {
+  async change(actorId: string, id: string, input: ChangeUser) {
     asHttp(() => assertBranchAssignment(input.role, input.branchIds));
     const branchIds = [...new Set(input.branchIds)];
     await this.uow.run(async tx => {
@@ -39,6 +39,7 @@ export class UsersService {
       const staff = { set: input.staffMemberId !== undefined, staffMemberId: input.staffMemberId || null };
       if (!(await this.repo.updateRole(tx, id, input.role, staff))) throw new NotFoundException();
       await this.repo.replaceBranches(tx, id, branchIds);
+      await this.activity.record(tx, { branchId: null, actorId, action: 'user.role_changed', payload: { userId: id, role: input.role, branchIds } });
     });
     return { id, role: input.role, branchIds: input.branchIds };
   }
@@ -56,11 +57,12 @@ export class UsersService {
   }
 
   /** A reset ends every session the user has, like deactivating. */
-  async resetPassword(id: string, password: string) {
+  async resetPassword(actorId: string, id: string, password: string) {
     const passwordHash = await hash(password);
     await this.uow.run(async tx => {
       if (!(await this.repo.setPassword(tx, id, passwordHash))) throw new NotFoundException();
       await this.repo.deleteSessions(tx, id);
+      await this.activity.record(tx, { branchId: null, actorId, action: 'user.password_reset', payload: { userId: id } });
     });
     return { id };
   }

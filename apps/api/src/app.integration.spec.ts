@@ -7,6 +7,14 @@ import { CLOCK } from './shared/clock';
 import { DB, Db } from './db/db.module';
 import { setupApiDocs } from './main';
 
+/** Removes the sales (and their audit rows) a test created, by real creation time, so repeated runs don't accumulate data. */
+async function removeSalesSince(db: Db, since: Date) {
+  const at = since.toISOString();
+  await db.execute(sql`delete from activity_log where payload->>'saleId' in (select id::text from sales where created_at >= ${at}::timestamptz) or (action = 'cash_close.submitted' and created_at >= ${at}::timestamptz)`);
+  await db.execute(sql`delete from sale_lines where sale_id in (select id from sales where created_at >= ${at}::timestamptz)`);
+  await db.execute(sql`delete from sales where created_at >= ${at}::timestamptz`);
+}
+
 describe('API foundation (Postgres)', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -103,6 +111,8 @@ describe('API foundation (Postgres)', () => {
       await request(app.getHttpServer()).post(`/users/${created.body.id}/password`).set('Cookie', ownerCookie).send({ password: 'reset-pass-14' }).expect(201);
       await request(app.getHttpServer()).get('/me').set('Cookie', oldLogin.headers['set-cookie'][0].split(';')[0]).expect(401);
       expect((await login(email, 'initial-pass-14')).status).toBe(401);
+      const audited = await app.get<Db>(DB).execute(sql`select action from activity_log where payload->>'userId' = ${created.body.id} and action in ('user.role_changed', 'user.password_reset')`);
+      expect(audited.rows.map(r => r.action)).toEqual(expect.arrayContaining(['user.role_changed', 'user.password_reset']));
       const loggedIn = await login(email, 'reset-pass-14');
       expect(loggedIn.status).toBe(201);
       const userCookie = loggedIn.headers['set-cookie'][0].split(';')[0];
@@ -455,6 +465,7 @@ describe('API foundation (Postgres)', () => {
   });
 
   it('records idempotent sales with catalog snapshots, cutoff business days, and gapless concurrent numbers', async () => {
+    const startedAt = new Date();
     const fixedNow = new Date('2026-11-03T19:59:00Z'); // 03:59 Manila
     const app = await createTestApp('test', fixedNow);
     const db = app.get<Db>(DB);
@@ -492,11 +503,12 @@ describe('API foundation (Postgres)', () => {
     } finally {
       if (archivedProductId) await db.execute(sql`update products set active = true where id = ${archivedProductId}`);
       if (branchId) await db.execute(sql`update branches set day_cutoff = ${originalCutoff} where id = ${branchId}`);
-      await app.close();
+      try { await removeSalesSince(db, startedAt); } finally { await app.close(); }
     }
   });
 
   it('lets only managers void sales, with a reason, and logs every void', async () => {
+    const startedAt = new Date();
     const fixedNow = new Date('2026-11-03T10:00:00Z');
     const app = await createTestApp('test', fixedNow);
     const db = app.get<Db>(DB);
@@ -531,10 +543,11 @@ describe('API foundation (Postgres)', () => {
       const listing = await request(app.getHttpServer()).get(`/branches/${branchId}/sales?from=2026-11-04&to=2026-11-04`).set('Cookie', manager).expect(200);
       expect(listing.body.find((sale: { id: string }) => sale.id === todaySale.id)).toMatchObject({ voidedBy: activity.rows[0].actor_id, voidReason: 'wrong item' });
       await request(app.getHttpServer()).post(`/branches/${branchId}/sales/${previousDaySale.id}/void`).set('Cookie', manager).send({ reason: 'manager correction' }).expect(201);
-    } finally { await app.close(); }
+    } finally { try { await removeSalesSince(db, startedAt); } finally { await app.close(); } }
   });
 
   it('previews and submits an immutable cash close that blocks sales and voids', async () => {
+    const startedAt = new Date();
     const app = await createTestApp('test', new Date('2030-01-15T12:00:00Z'));
     const db = app.get<Db>(DB);
     try {
@@ -573,8 +586,10 @@ describe('API foundation (Postgres)', () => {
       expect(audit.rows).toHaveLength(1);
       expect(audit.rows[0].actor_id).toBe((await db.execute(sql`select user_id from sessions where token_hash = ${createHash('sha256').update(manager.slice('ade_session='.length)).digest('hex')}`)).rows[0].user_id);
     } finally {
-      await app.get<Db>(DB).execute(sql`delete from cash_closes where business_date = '2030-01-15'`);
-      await app.close();
+      try {
+        await db.execute(sql`delete from cash_closes where business_date = '2030-01-15'`);
+        await removeSalesSince(db, startedAt);
+      } finally { await app.close(); }
     }
   });
 

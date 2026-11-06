@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthService } from '../application/auth.service';
 import { CurrentUser as Current, Role } from '../domain/current-user';
+import { canAccessBranch } from '../domain/branch-scope';
 import { ROLES } from './roles.decorator';
 import { sessionToken } from './session-cookie';
 
@@ -19,8 +20,8 @@ export class AccessGuard implements CanActivate {
     try { current = await this.auth.current(sessionToken(req)); } catch { throw new UnauthorizedException(); }
     const roles = this.reflector.getAllAndOverride<Role[]>(ROLES, [context.getHandler(), context.getClass()]);
     if (roles && !roles.includes(current.user.role)) throw new ForbiddenException();
-    const branchId = req.params.branchId;
-    if (branchId && current.user.role !== 'owner' && !current.branches.some(branch => branch.id === branchId)) throw new ForbiddenException();
+    const branchId = req.params.branchId as string | undefined;
+    if (branchId && !canAccessBranch(current, branchId)) throw new ForbiddenException();
     req.current = current;
     return true;
   }

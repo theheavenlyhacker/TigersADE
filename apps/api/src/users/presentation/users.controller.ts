@@ -21,11 +21,11 @@ export class UsersController {
   create(@Body() body: CreateUserDto, @CurrentUser() { user }: Current) { return this.users.create(user.id, body); }
 
   @Patch(':id')
-  change(@Param('id', uuidPipe) id: string, @Body() body: ChangeUserDto) { return this.users.change(id, body); }
+  change(@Param('id', uuidPipe) id: string, @Body() body: ChangeUserDto, @CurrentUser() { user }: Current) { return this.users.change(user.id, id, body); }
 
   @Post(':id/deactivate')
   deactivate(@Param('id', uuidPipe) id: string, @CurrentUser() { user }: Current) { return this.users.deactivate(user.id, id); }
 
   @Post(':id/password')
-  resetPassword(@Param('id', uuidPipe) id: string, @Body() body: ResetPasswordDto) { return this.users.resetPassword(id, body.password); }
+  resetPassword(@Param('id', uuidPipe) id: string, @Body() body: ResetPasswordDto, @CurrentUser() { user }: Current) { return this.users.resetPassword(user.id, id, body.password); }
 }

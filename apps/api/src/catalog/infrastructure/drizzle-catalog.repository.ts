@@ -3,19 +3,14 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { branches, expenseCategories, productCategories, products } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
-import { UNIQUE_VIOLATION, pgCode } from '../../shared/pg-error';
+import { orConflict } from '../../shared/pg-error';
 import { asText } from '../../shared/sql';
 import { CatalogRepository, ProductRecord } from '../application/catalog.repository';
 
 const productView = { id: products.id, categoryId: products.categoryId, name: products.name, price: asText(products.price), unitCost: asText(products.unitCost) };
 const productRecord = { ...productView, active: products.active };
 
-async function unique<T>(work: Promise<T>): Promise<T> {
-  try { return await work; } catch (error) {
-    if (pgCode(error) === UNIQUE_VIOLATION) throw new ConflictException('A record with this name already exists');
-    throw error;
-  }
-}
+const unique = <T>(work: Promise<T>) => orConflict(work, () => new ConflictException('A record with this name already exists'));
 
 @Injectable()
 export class DrizzleCatalogRepository extends CatalogRepository {

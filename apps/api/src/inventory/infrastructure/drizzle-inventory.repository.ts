@@ -3,8 +3,8 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { branchInventory, inventoryItems, stockMovements } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
-import { UNIQUE_VIOLATION, pgCode } from '../../shared/pg-error';
-import { asText } from '../../shared/sql';
+import { orConflict } from '../../shared/pg-error';
+import { asText, lockActiveItem } from '../../shared/sql';
 import { InventoryRepository, ItemView } from '../application/inventory.repository';
 
 const itemView = { id: inventoryItems.id, name: inventoryItems.name, unit: inventoryItems.unit, unitCost: asText(inventoryItems.unitCost), active: inventoryItems.active };
@@ -13,12 +13,7 @@ const movementView = {
   qtyDelta: asText(stockMovements.qtyDelta), note: stockMovements.note, createdBy: stockMovements.createdBy, createdAt: stockMovements.createdAt,
 };
 
-async function uniqueName<T>(work: Promise<T>): Promise<T> {
-  try { return await work; } catch (error) {
-    if (pgCode(error) === UNIQUE_VIOLATION) throw new UnprocessableEntityException('An inventory item with this name already exists');
-    throw error;
-  }
-}
+const uniqueName = <T>(work: Promise<T>) => orConflict(work, () => new UnprocessableEntityException('An inventory item with this name already exists'));
 
 @Injectable()
 export class DrizzleInventoryRepository extends InventoryRepository {
@@ -66,7 +61,7 @@ export class DrizzleInventoryRepository extends InventoryRepository {
   }
 
   async activeItemExists(tx: Executor, itemId: string) {
-    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true))).for('share')).length > 0;
+    return lockActiveItem(tx, itemId);
   }
 
   async onHand(tx: Executor, branchId: string, itemId: string) {

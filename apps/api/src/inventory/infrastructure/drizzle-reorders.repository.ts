@@ -3,7 +3,7 @@ import { and, desc, asc, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { inventoryItems, reorderRequests, stockMovements } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
-import { asText } from '../../shared/sql';
+import { asText, lockActiveItem } from '../../shared/sql';
 import { ReorderStatus, ReordersRepository } from '../application/reorders.repository';
 
 const view = {
@@ -56,7 +56,7 @@ export class DrizzleReordersRepository extends ReordersRepository {
   }
 
   async itemActive(tx: Executor, itemId: string) {
-    return (await tx.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.active, true))).for('share')).length > 0;
+    return lockActiveItem(tx, itemId);
   }
 
   async insertReceivedMovement(tx: Executor, m: { branchId: string; itemId: string; quantity: string; createdBy: string; reorderRequestId: string }) {

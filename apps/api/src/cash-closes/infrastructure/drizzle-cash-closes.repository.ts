@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { DB, Db } from '../../db/db.module';
 import { branches, cashCloses, sales } from '../../db/schema';
 import { Executor } from '../../db/unit-of-work';
-import { UNIQUE_VIOLATION, pgCode } from '../../shared/pg-error';
+import { orConflict } from '../../shared/pg-error';
 import { asText } from '../../shared/sql';
 import { CashClosesRepository, CashCloseFigures } from '../application/cash-closes.repository';
 
@@ -38,15 +38,12 @@ export class DrizzleCashClosesRepository extends CashClosesRepository {
   }
 
   async insert(tx: Executor, c: CashCloseFigures & { branchId: string; businessDate: string; submittedBy: string }) {
-    try {
+    return orConflict((async () => {
       const [row] = await tx.insert(cashCloses).values({
         branchId: c.branchId, businessDate: c.businessDate, openingFloat: BigInt(c.openingFloat), cashSales: BigInt(c.cashSales),
         expectedCash: BigInt(c.expectedCash), countedCash: BigInt(c.countedCash), variance: BigInt(c.variance), note: c.note, submittedBy: c.submittedBy,
       }).returning({ id: cashCloses.id, branchId: cashCloses.branchId, businessDate: sql<string>`${cashCloses.businessDate}::text`, ...figures });
       return row;
-    } catch (error) {
-      if (pgCode(error) === UNIQUE_VIOLATION) throw new ConflictException('A cash close already exists for this business day');
-      throw error;
-    }
+    })(), () => new ConflictException('A cash close already exists for this business day'));
   }
 }

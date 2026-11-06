@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ActivityLog } from '../../db/activity-log';
 import { UnitOfWork } from '../../db/unit-of-work';
+import { asHttp } from '../../shared/as-http';
+import { movementDelta } from '../domain/stock';
 import { ReorderStatus, ReordersRepository } from './reorders.repository';
 
 @Injectable()
@@ -10,7 +12,7 @@ export class ReordersService {
   list(branchId: string, status: ReorderStatus | null) { return this.repo.list(branchId, status); }
 
   request(actorId: string, branchId: string, input: { itemId: string; quantity: string; note?: string | null }) {
-    if (Number(input.quantity) <= 0) throw new UnprocessableEntityException('quantity must be positive');
+    asHttp(() => movementDelta('received', input.quantity, '0')); // rejects zero and negative quantities
     return this.uow.run(async tx => {
       if (!(await this.repo.branchExists(tx, branchId))) throw new NotFoundException();
       const id = await this.repo.insert(tx, { branchId, itemId: input.itemId, quantity: input.quantity, note: input.note ?? null, requestedBy: actorId });
