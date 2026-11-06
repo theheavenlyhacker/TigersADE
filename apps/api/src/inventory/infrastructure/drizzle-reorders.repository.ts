@@ -37,7 +37,7 @@ export class DrizzleReordersRepository extends ReordersRepository {
 
   async insert(tx: Executor, r: { branchId: string; itemId: string; quantity: string; note: string | null; requestedBy: string }) {
     const rows = await tx.execute<{ id: string }>(sql`insert into reorder_requests (branch_id, item_id, quantity, note, requested_by)
-      select ${r.branchId}, id, ${r.quantity}, ${r.note}, ${r.requestedBy} from inventory_items where id = ${r.itemId} and active returning id`);
+      select ${r.branchId}, id, ${r.quantity}, ${r.note}, ${r.requestedBy} from inventory_items where id = ${r.itemId} and active for share returning id`);
     return rows.rows[0]?.id ?? null;
   }
 
