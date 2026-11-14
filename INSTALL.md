@@ -53,7 +53,7 @@ This adds one branch (`BRANCH_CODE`/`BRANCH_NAME`, default `main`/`Main`) and on
 
 ## 5. Run
 
-The API reads `apps/api/.env` only in the shell you start it from, so run this from the repo root in a shell where `DATABASE_URL` is set (`set -a && . apps/api/.env && set +a`):
+Run both services from the repo root. The API loads `apps/api/.env` when it starts:
 
 ```sh
 pnpm dev
@@ -70,7 +70,7 @@ Log in with the owner you created. In Swagger, call `POST /auth/login` first; it
 ## Troubleshooting
 
 - **`EADDRINUSE :::4000`**: an old API process is still running. Find it with `ss -ltnp | grep 4000` and kill it.
-- **`client password must be a string`**: `DATABASE_URL` isn't set; check `apps/api/.env`, and export it for step 5.
+- **`client password must be a string`**: `DATABASE_URL` isn't set; check `apps/api/.env`.
 - **`relation "branches" already exists` on migrate**: the Postgres volume is stale. Reset it with `docker compose down -v db` (deletes all local DB data), then repeat steps 3–4.
 - **`db:migrate` not found**: run it from `apps/api`, not the repo root.
 
