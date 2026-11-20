@@ -28,7 +28,7 @@ DATABASE_URL=postgres://tigers:tigers@localhost:5433/tigers
 
 Optional: `PORT` (default 4000), `WEB_ORIGIN` (CORS origin; default allows `http://localhost:3000` and `http://127.0.0.1:3000`),
 The web app optionally reads
-`NEXT_PUBLIC_API_URL` (default: same host, port 4000).
+`NEXT_PUBLIC_API_URL` (default: `http://localhost:4000`). Next.js proxies browser requests through `/api` so session cookies stay on the frontend's origin, including when Vercel and Render use separate domains. Set the variable to the backend's HTTPS URL before building the frontend.
 
 ## 3. Start the database
 

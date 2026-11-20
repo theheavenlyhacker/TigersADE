@@ -398,7 +398,7 @@ describe('API foundation (Postgres)', () => {
       await request(app.getHttpServer()).get(`/reports/summary?branch=${branchId}&date=2026-04-01`).set('Cookie', cashier).expect(403);
       const comparison = await request(app.getHttpServer()).get('/reports/comparison').set('Cookie', owner).expect(200);
       const branchComparison = comparison.body.find((row: any) => row.id === branchId);
-      expect(branchComparison).toMatchObject({ today: '80000', week: '200000', mtd: '80000' });
+      expect(branchComparison).toMatchObject({ today: '80000', week: '200000', mtd: '80000', customers: 1, expenses: '0' });
       expect(Number(branchComparison.growth)).toBeCloseTo(166.6667, 3);
       expect(Number(comparison.body.find((row: any) => row.id === branchId).share)).toBeGreaterThan(0);
       const best = await request(app.getHttpServer()).get(`/reports/best-sellers?branch=${branchId}&from=2026-03-30&to=2026-04-01`).set('Cookie', manager).expect(200);

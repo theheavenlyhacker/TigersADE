@@ -12,8 +12,13 @@ test('login page renders while the API is running', async ({ page, request }) =>
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page.locator('p[role="alert"]')).toHaveText('Invalid email or password');
   await page.getByPlaceholder('Password').fill('tigers123');
+  const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.status() === 201);
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  const response = await loginResponse;
+  expect(new URL(response.url()).origin).toBe(new URL(page.url()).origin);
   await expect(page).toHaveURL(/dashboard/);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('NaN');
   await expect(page.getByText('0%', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Mika Santos', { exact: true })).toBeVisible();
@@ -35,7 +40,7 @@ test('cashier lands on POS and can record a sale', async ({ page }) => {
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page).toHaveURL(/sales/);
   await expect(page.getByRole('heading', { name: 'Point of sale' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Executive dashboard' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toHaveCount(0);
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/sales/);
   await page.getByRole('button', { name: /Flat white/ }).click();

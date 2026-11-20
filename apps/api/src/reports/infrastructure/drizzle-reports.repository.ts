@@ -65,7 +65,9 @@ export class DrizzleReportsRepository extends ReportsRepository {
         coalesce(sum(s.total) filter(where s.business_date = d.today), 0)::text today,
         coalesce(sum(s.total) filter(where s.business_date between date_trunc('week', d.today)::date and d.today), 0)::text week,
         coalesce(sum(s.total) filter(where s.business_date between date_trunc('month', d.today)::date and d.today), 0)::text mtd,
-        coalesce(sum(s.total) filter(where s.business_date between d.previous_start and d.previous_end), 0)::text previous
+        coalesce(sum(s.total) filter(where s.business_date between d.previous_start and d.previous_end), 0)::text previous,
+        count(s.id) filter(where s.business_date between date_trunc('month', d.today)::date and d.today)::int customers,
+        coalesce((select sum(e.amount) from expenses e where e.branch_id = b.id and e.business_date between date_trunc('month', d.today)::date and d.today), 0)::text expenses
       from branches b join branch_days d on d.id = b.id
       left join sales s on s.branch_id = b.id and s.voided_at is null
         and s.business_date between least(date_trunc('week', d.today)::date, d.previous_start) and d.today

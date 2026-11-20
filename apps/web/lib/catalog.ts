@@ -5,7 +5,7 @@ export type Catalog = {
   products: { id: string; categoryId: string; categoryName: string; name: string; price: string; unitCost: string }[];
 };
 
-export const apiUrl = () => process.env.NEXT_PUBLIC_API_URL ?? (typeof window === 'undefined' ? 'http://localhost:4000' : `http://${window.location.hostname}:4000`);
+export const apiUrl = () => '/api';
 
 export async function loadCatalog(): Promise<Catalog> {
   const cached = localStorage.getItem('catalog');
