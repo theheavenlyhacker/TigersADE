@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";import {usePathname,useRouter} from "next/navigation";import {useEffect,ReactNode} from "react";
 import {useAuth} from "./Auth";import AskAI from "./AskAI";
-const nav=[["dashboard","Executive dashboard"],["sales","Sales & revenue"],["inventory","Inventory"],["products","Products"],["expenses","Expenses"],["staff","Staff & activity"],["settings","Branch settings"]];
+const nav=[["dashboard","Dashboard"],["sales","Sales & revenue"],["inventory","Inventory"],["products","Products"],["expenses","Expenses"],["staff","Staff & activity"],["settings","Branch settings"]];
 export default function Shell({children}:{children:ReactNode}){
 const {user,loaded,logout,scope,setScope,branches}=useAuth();const path=usePathname();const r=useRouter();
 useEffect(()=>{if(loaded&&!user)r.replace("/")},[loaded,user,r]);

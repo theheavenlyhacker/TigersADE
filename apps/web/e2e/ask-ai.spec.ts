@@ -10,7 +10,7 @@ async function loginAs(page: import('@playwright/test').Page, email: string, das
 }
 
 test('owner scoped to a branch sees API figures in Ask AI', async ({ page }) => {
-  await loginAs(page, 'roy@tigerscafe.ph', /Executive dashboard/);
+  await loginAs(page, 'roy@tigerscafe.ph', /Dashboard/);
   await page.getByLabel('Branch').selectOption('main');
   await page.getByRole('button', { name: 'Ask AI about your data' }).click();
   await expect(page.getByRole('textbox', { name: 'Ask about your data' })).toBeVisible();

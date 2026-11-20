@@ -35,7 +35,7 @@ test('cashier lands on POS and can record a sale', async ({ page }) => {
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page).toHaveURL(/sales/);
   await expect(page.getByRole('heading', { name: 'Point of sale' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Executive dashboard' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toHaveCount(0);
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/sales/);
   await page.getByRole('button', { name: /Flat white/ }).click();
