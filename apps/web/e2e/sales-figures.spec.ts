@@ -38,6 +38,6 @@ test("recording a sale raises today's dashboard figure and voiding it lowers the
   await saleRow.getByLabel(/Reason for voiding sale/).fill('E2E report check');
   await saleRow.getByRole('button', { name: 'Confirm void' }).click();
   await expect(saleRow).toContainText('Voided');
-  await page.getByRole('link', { name: /Branch dashboard|Executive dashboard/ }).click();
+  await page.getByRole('link', { name: /Branch dashboard|^Dashboard$/ }).click();
   await expect.poll(() => todayFigure(page)).toBe(before);
 });

@@ -1,1 +1,1 @@
-module.exports={content:["./app/**/*.{ts,tsx}","./components/**/*.{ts,tsx}"],theme:{extend:{colors:{brand:"#1c4a3a",mint:"#e3ede6",sage:"#6aa386",paper:"#f6f6f2",ink:"#1b2b24"}}},plugins:[]};
+module.exports={content:["./app/**/*.{ts,tsx}","./components/**/*.{ts,tsx}"],theme:{extend:{colors:{brand:"#1c4a3a",mint:"#e3ede6",sage:"#6aa386",paper:"#f6f6f2",ink:"#1b2b24",deep:"#173f31",accent:"#24634b",tint:"#eaf2ec",wash:"#f6f7f4",line:"#e4e9e3",grid:"#edf0eb",muted:"#637168",leaf:"#91ab87",sand:"#d6c6aa",slate:"#718f99",cream:"#cdddd1",amber:"#95652b"}}},plugins:[]};
