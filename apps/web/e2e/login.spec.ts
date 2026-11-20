@@ -12,8 +12,13 @@ test('login page renders while the API is running', async ({ page, request }) =>
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(page.locator('p[role="alert"]')).toHaveText('Invalid email or password');
   await page.getByPlaceholder('Password').fill('tigers123');
+  const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.status() === 201);
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  const response = await loginResponse;
+  expect(new URL(response.url()).origin).toBe(new URL(page.url()).origin);
   await expect(page).toHaveURL(/dashboard/);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('NaN');
   await expect(page.getByText('0%', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Mika Santos', { exact: true })).toBeVisible();
